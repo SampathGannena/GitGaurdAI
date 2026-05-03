@@ -1,0 +1,30 @@
+{
+  "name": "gitguard-ai",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "nodemon server/index.js",
+    "frontend:dev": "cd frontend && npm run dev",
+    "test": "node --test tests/*.test.js",
+    "check:server": "node --check server/index.js && node --check server/controllers/webhookController.js && node --check server/services/aiService.js && node --check server/services/commentService.js",
+    "lint": "echo 'Add linters'"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@octokit/rest": "^19.0.0",
+    "axios": "^1.4.0",
+    "body-parser": "^1.20.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "helmet": "^7.0.0",
+    "mongoose": "^7.3.0",
+    "winston": "^3.9.0"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.22"
+  }
+}
