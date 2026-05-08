@@ -30,6 +30,12 @@ async function handleGithubWebhook(req, res, next) {
     const headSha = payload.pull_request?.head?.sha || 'unknown-sha';
     const prTitle = payload.pull_request?.title || '';
     const prAuthor = payload.pull_request?.user?.login || '';
+    const parsedPrOpenedAt = payload.pull_request?.created_at
+      ? new Date(payload.pull_request.created_at)
+      : null;
+    const prOpenedAt = parsedPrOpenedAt && !Number.isNaN(parsedPrOpenedAt.getTime())
+      ? parsedPrOpenedAt
+      : null;
 
     runContext = { owner, repo, prNumber, headSha };
 
@@ -45,13 +51,13 @@ async function handleGithubWebhook(req, res, next) {
       }
     }
 
-    await reviewRunService.startRun({ owner, repo, prNumber, action, headSha, prTitle, prAuthor });
+    await reviewRunService.startRun({ owner, repo, prNumber, action, headSha, prTitle, prAuthor, prOpenedAt });
 
     const fetchDiffStart = Date.now();
-    const files = await githubService.listPullRequestFiles({ owner, repo, pull_number: prNumber });
+    const rawDiff = await githubService.fetchPullRequestDiff({ owner, repo, pull_number: prNumber });
     const fetchDiffMs = Date.now() - fetchDiffStart;
 
-    const diffs = diffAnalyzer.extractChangedHunks(files);
+    const diffs = diffAnalyzer.extractChangedHunks(rawDiff);
 
     const commentsToPost = [];
     const findings = [];
@@ -144,7 +150,14 @@ async function handleGithubWebhook(req, res, next) {
       }
     }
 
-    const llmAnalysisMs = Date.now() - llmStart;
+    const llmCompletedAt = new Date();
+    const llmAnalysisMs = llmCompletedAt.getTime() - llmStart;
+    const prOpenToLlmResponseMs = prOpenedAt
+      ? Math.max(0, llmCompletedAt.getTime() - prOpenedAt.getTime())
+      : 0;
+    logger.info(
+      `PR open to LLM response for ${owner}/${repo}#${prNumber}: ${prOpenToLlmResponseMs}ms`,
+    );
     const commentStart = Date.now();
 
     if (commentsToPost.length > 0) {
@@ -162,12 +175,14 @@ async function handleGithubWebhook(req, res, next) {
       headSha,
       payload: {
         timingsMs: {
+          prOpenToLlmResponse: prOpenToLlmResponseMs,
           fetchDiff: fetchDiffMs,
           llmAnalysis: llmAnalysisMs,
           commentPost: commentPostMs,
           total: totalMs,
         },
-        filesChanged: files.length,
+        llmCompletedAt,
+        filesChanged: diffs.length,
         hunksAnalyzed: analyzedHunks,
         commentsPosted: commentsToPost.length,
         avgRiskScore: summary.avgRiskScore,
@@ -179,10 +194,16 @@ async function handleGithubWebhook(req, res, next) {
       ok: true,
       comments: commentsToPost.length,
       metrics: {
-        filesChanged: files.length,
+        filesChanged: diffs.length,
         hunksAnalyzed: analyzedHunks,
         avgRiskScore: summary.avgRiskScore,
-        timingsMs: { fetchDiff: fetchDiffMs, llmAnalysis: llmAnalysisMs, commentPost: commentPostMs, total: totalMs },
+        timingsMs: {
+          prOpenToLlmResponse: prOpenToLlmResponseMs,
+          fetchDiff: fetchDiffMs,
+          llmAnalysis: llmAnalysisMs,
+          commentPost: commentPostMs,
+          total: totalMs,
+        },
       },
     });
   } catch (err) {

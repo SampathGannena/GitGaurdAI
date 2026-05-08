@@ -21,6 +21,7 @@ async function startRun({
   headSha,
   prTitle,
   prAuthor,
+  prOpenedAt,
 }) {
   return ReviewRun.findOneAndUpdate(
     { owner, repo, prNumber, headSha },
@@ -33,6 +34,7 @@ async function startRun({
         headSha,
         prTitle,
         prAuthor,
+        prOpenedAt,
       },
       $set: { status: "processing", skippedReason: "" },
     },

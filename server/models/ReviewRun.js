@@ -25,9 +25,12 @@ const reviewRunSchema = new mongoose.Schema(
     headSha: { type: String, required: true, index: true },
     prTitle: { type: String, default: '' },
     prAuthor: { type: String, default: '' },
+    prOpenedAt: { type: Date },
+    llmCompletedAt: { type: Date },
     status: { type: String, enum: ['processing', 'completed', 'failed', 'skipped'], default: 'processing' },
     skippedReason: { type: String, default: '' },
     timingsMs: {
+      prOpenToLlmResponse: { type: Number, default: 0 },
       fetchDiff: { type: Number, default: 0 },
       llmAnalysis: { type: Number, default: 0 },
       commentPost: { type: Number, default: 0 },

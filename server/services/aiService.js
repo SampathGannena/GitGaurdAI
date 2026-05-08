@@ -1,8 +1,13 @@
 const axios = require('axios');
 const logger = require('../config/logger');
 
+const DEFAULT_GROQ_MODEL = 'llama-3.3-70b-versatile';
+const DEPRECATED_GROQ_MODELS = new Set(['mixtral-8x7b-32768']);
+
 async function analyzeHunk({ filePath, hunk, owner, repo, teamSettings = {}, rulesContext = {} }) {
   const prompt = `You are GitGuard AI reviewing ${owner}/${repo}.
+
+Find bugs/security flaws in this added code.
 
 Return ONLY valid JSON with keys:
 - title: string (short issue headline)
@@ -22,13 +27,16 @@ Repo settings snapshot: ${JSON.stringify(teamSettings)}
 
 Changed file: ${filePath}
 Hunk header: ${hunk.header}
-Hunk content:
+Added code:
+${hunk.changedLines.join('\n') || '(no added code)'}
+
+Diff context:
 ${hunk.patchLines.join('\n')}`;
 
   try {
     // Use Groq API for fast LLM inference
     const res = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-      model: process.env.GROQ_MODEL || 'mixtral-8x7b-32768',
+      model: getGroqModel(),
       messages: [{ role: 'system', content: 'You are a helpful code reviewer.' }, { role: 'user', content: prompt }],
       temperature: 0.2,
       max_tokens: 800
@@ -45,6 +53,14 @@ ${hunk.patchLines.join('\n')}`;
     logger.error('Groq AI analysis error', err.message || err);
     return null;
   }
+}
+
+function getGroqModel() {
+  const configuredModel = process.env.GROQ_MODEL;
+  if (!configuredModel || DEPRECATED_GROQ_MODELS.has(configuredModel)) {
+    return DEFAULT_GROQ_MODEL;
+  }
+  return configuredModel;
 }
 
 function safeJsonParse(text) {
@@ -93,4 +109,4 @@ function normalizeCategory(category) {
   return ['security', 'performance', 'correctness', 'maintainability'].includes(val) ? val : 'correctness';
 }
 
-module.exports = { analyzeHunk };
+module.exports = { analyzeHunk, getGroqModel };

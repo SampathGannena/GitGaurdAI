@@ -15,18 +15,33 @@ const itemVariants = {
   visible: { opacity: 1, y: 0, transition: { duration: 0.4 } }
 }
 
-export default function Dashboard({ apiBase, apiFetch, owner, setOwner, repo, setRepo }) {
-  const [settings, setSettings] = useState({
-    enabled: true,
+const DEFAULT_SETTINGS = {
+  enabled: true,
+  rules: {
     strictMode: false,
     ignoreLint: true,
     securityFirst: false,
     enableReplayGuard: true,
     enableRiskSummary: true,
-    explanationTone: 'professional',
+    explanationTone: 'human',
     maxHunksPerPR: 20,
     maxCommentsPerPR: 10,
-  })
+  },
+}
+
+function normalizeSettings(nextSettings = {}) {
+  return {
+    ...DEFAULT_SETTINGS,
+    ...nextSettings,
+    rules: {
+      ...DEFAULT_SETTINGS.rules,
+      ...(nextSettings.rules || {}),
+    },
+  }
+}
+
+export default function Dashboard({ apiBase, apiFetch, owner, setOwner, repo, setRepo, onSelectPR }) {
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS)
   const [history, setHistory] = useState([])
   const [insights, setInsights] = useState({})
   const [status, setStatus] = useState('')
@@ -44,7 +59,7 @@ export default function Dashboard({ apiBase, apiFetch, owner, setOwner, repo, se
       const res = await apiFetch(`${apiBase}/settings/${owner}/${repo}`)
       const data = await res.json()
       if (data.ok) {
-        setSettings(data.settings || settings)
+        setSettings(normalizeSettings(data.settings))
         setStatus('✓ Settings loaded successfully')
         setStatusType('success')
       } else {
@@ -71,7 +86,7 @@ export default function Dashboard({ apiBase, apiFetch, owner, setOwner, repo, se
       const res = await apiFetch(`${apiBase}/settings/${owner}/${repo}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings),
+        body: JSON.stringify(normalizeSettings(settings)),
       })
       const data = await res.json()
       if (data.ok) {
@@ -264,8 +279,17 @@ export default function Dashboard({ apiBase, apiFetch, owner, setOwner, repo, se
                 >
                   <input
                     type="checkbox"
-                    checked={settings[setting.key]}
-                    onChange={(e) => setSettings({ ...settings, [setting.key]: e.target.checked })}
+                    checked={setting.key === 'enabled' ? settings.enabled : settings.rules[setting.key]}
+                    onChange={(e) => {
+                      if (setting.key === 'enabled') {
+                        setSettings({ ...settings, enabled: e.target.checked })
+                        return
+                      }
+                      setSettings({
+                        ...settings,
+                        rules: { ...settings.rules, [setting.key]: e.target.checked },
+                      })
+                    }}
                     className="mt-1 w-4 h-4 cursor-pointer rounded"
                   />
                   <div className="flex-1">
@@ -286,13 +310,13 @@ export default function Dashboard({ apiBase, apiFetch, owner, setOwner, repo, se
                   📝 Explanation Tone
                 </label>
                 <select
-                  value={settings.explanationTone}
-                  onChange={(e) => setSettings({ ...settings, explanationTone: e.target.value })}
+                  value={settings.rules.explanationTone}
+                  onChange={(e) => setSettings({ ...settings, rules: { ...settings.rules, explanationTone: e.target.value } })}
                   className="input-field text-dark-100"
                 >
-                  <option value="professional">Professional</option>
-                  <option value="casual">Casual</option>
-                  <option value="technical">Technical</option>
+                  <option value="human">Human</option>
+                  <option value="concise">Concise</option>
+                  <option value="detailed">Detailed</option>
                 </select>
                 <p className="text-xs text-dark-500">Communication style for AI feedback</p>
               </div>
@@ -305,8 +329,8 @@ export default function Dashboard({ apiBase, apiFetch, owner, setOwner, repo, se
                   type="number"
                   min="1"
                   max="200"
-                  value={settings.maxHunksPerPR}
-                  onChange={(e) => setSettings({ ...settings, maxHunksPerPR: parseInt(e.target.value) })}
+                  value={settings.rules.maxHunksPerPR}
+                  onChange={(e) => setSettings({ ...settings, rules: { ...settings.rules, maxHunksPerPR: parseInt(e.target.value) } })}
                   className="input-field"
                 />
                 <p className="text-xs text-dark-500">Maximum code sections to analyze</p>
@@ -320,8 +344,8 @@ export default function Dashboard({ apiBase, apiFetch, owner, setOwner, repo, se
                   type="number"
                   min="1"
                   max="100"
-                  value={settings.maxCommentsPerPR}
-                  onChange={(e) => setSettings({ ...settings, maxCommentsPerPR: parseInt(e.target.value) })}
+                  value={settings.rules.maxCommentsPerPR}
+                  onChange={(e) => setSettings({ ...settings, rules: { ...settings.rules, maxCommentsPerPR: parseInt(e.target.value) } })}
                   className="input-field"
                 />
                 <p className="text-xs text-dark-500">Maximum review comments per pull request</p>
@@ -402,6 +426,7 @@ export default function Dashboard({ apiBase, apiFetch, owner, setOwner, repo, se
                   <th className="py-4 px-4 text-center">Comments</th>
                   <th className="py-4 px-4 text-center">Risk Score</th>
                   <th className="py-4 px-4 text-right">Latency</th>
+                  {onSelectPR && <th className="py-4 px-4 text-right">Analysis</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-dark-700">
@@ -446,6 +471,16 @@ export default function Dashboard({ apiBase, apiFetch, owner, setOwner, repo, se
                     <td className="py-4 px-4 text-right text-dark-400">
                       {run.timingsMs?.total ? (run.timingsMs.total / 1000).toFixed(2) + 's' : 'N/A'}
                     </td>
+                    {onSelectPR && (
+                      <td className="py-4 px-4 text-right">
+                        <button
+                          onClick={() => onSelectPR(run.prNumber)}
+                          className="px-3 py-1 rounded-lg bg-brand-primary/20 text-brand-primary border border-brand-primary/30 hover:bg-brand-primary/30 transition"
+                        >
+                          View
+                        </button>
+                      </td>
+                    )}
                   </motion.tr>
                 ))}
               </tbody>

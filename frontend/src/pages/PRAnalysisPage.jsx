@@ -179,22 +179,28 @@ export default function PRAnalysisPage({
             ⏱️ Performance Metrics
           </h3>
           <div className="grid grid-cols-4 gap-4 text-sm">
-            {timingsMs.fetchDiffMs && (
+            {timingsMs.prOpenToLlmResponse !== undefined && (
+              <div>
+                <p className="text-slate-400">PR Open to LLM</p>
+                <p className="font-semibold">{timingsMs.prOpenToLlmResponse}ms</p>
+              </div>
+            )}
+            {timingsMs.fetchDiff !== undefined && (
               <div>
                 <p className="text-slate-400">Diff Fetch</p>
-                <p className="font-semibold">{timingsMs.fetchDiffMs}ms</p>
+                <p className="font-semibold">{timingsMs.fetchDiff}ms</p>
               </div>
             )}
-            {timingsMs.llmMs && (
+            {timingsMs.llmAnalysis !== undefined && (
               <div>
                 <p className="text-slate-400">AI Analysis</p>
-                <p className="font-semibold">{timingsMs.llmMs}ms</p>
+                <p className="font-semibold">{timingsMs.llmAnalysis}ms</p>
               </div>
             )}
-            {timingsMs.commentMs && (
+            {timingsMs.commentPost !== undefined && (
               <div>
                 <p className="text-slate-400">Comment Post</p>
-                <p className="font-semibold">{timingsMs.commentMs}ms</p>
+                <p className="font-semibold">{timingsMs.commentPost}ms</p>
               </div>
             )}
             {timingsMs.total && (
@@ -248,7 +254,7 @@ export default function PRAnalysisPage({
                         {finding.title}
                       </h3>
                       <p className="text-sm text-slate-400 mt-1">
-                        {finding.filename}
+                        {finding.filePath}
                         {finding.lineNumber && ` : line ${finding.lineNumber}`}
                       </p>
                     </div>
