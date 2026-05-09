@@ -1,53 +1,144 @@
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 
+function formatMs(ms) {
+  if (ms === undefined || ms === null) return "N/A";
+  return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(2)}s`;
+}
+
+function severityClass(severity) {
+  const map = {
+    critical: "border-red-400/30 bg-red-400/10 text-red-200",
+    high: "border-orange-400/30 bg-orange-400/10 text-orange-200",
+    medium: "border-amber-400/30 bg-amber-400/10 text-amber-100",
+    low: "border-cyan-400/30 bg-cyan-400/10 text-cyan-100",
+  };
+  return map[severity] || map.low;
+}
+
 export default function PRAnalysisPage({
   apiBase,
   apiFetch,
   owner,
   repo,
   prNumber,
+  onPrNumberChange,
   onClose,
 }) {
+  const [draftPRNumber, setDraftPRNumber] = useState(prNumber || "");
+  const [activePRNumber, setActivePRNumber] = useState(prNumber || "");
   const [analysis, setAnalysis] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(Boolean(prNumber));
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!owner || !repo || !prNumber) {
-      setError("Missing repository or PR information");
+    if (!prNumber) return;
+    setDraftPRNumber(prNumber);
+    setActivePRNumber(prNumber);
+  }, [prNumber]);
+
+  useEffect(() => {
+    if (!activePRNumber) {
       setLoading(false);
       return;
     }
 
-    const fetchAnalysis = async () => {
+    if (!owner || !repo) {
+      setError("Missing repository information.");
+      setLoading(false);
+      return;
+    }
+
+    async function fetchAnalysis() {
+      setLoading(true);
+      setError("");
       try {
-        const res = await apiFetch(
-          `${apiBase}/settings/${owner}/${repo}/runs/${prNumber}`,
+        const response = await apiFetch(
+          `${apiBase}/settings/${owner}/${repo}/runs/${activePRNumber}`,
         );
-        if (!res.ok) throw new Error("Failed to fetch analysis");
-        const data = await res.json();
-        setAnalysis(data.analysis || data.run);
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.message || "Failed to fetch PR analysis");
+        }
+        setAnalysis(data.analysis);
       } catch (err) {
+        setAnalysis(null);
         setError(err.message);
       } finally {
         setLoading(false);
       }
-    };
+    }
 
     fetchAnalysis();
-  }, [owner, repo, prNumber]);
+  }, [apiBase, apiFetch, owner, repo, activePRNumber]);
+
+  const submitLookup = (event) => {
+    event.preventDefault();
+    const next = String(draftPRNumber || "").trim();
+    setAnalysis(null);
+    setActivePRNumber(next);
+    onPrNumberChange?.(next);
+  };
+
+  const Header = () => (
+    <section className="rounded-[28px] border border-white/10 bg-white/[0.04] p-6">
+      <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">
+            Pull Request Analysis
+          </p>
+          <h1 className="mt-3 text-3xl font-semibold text-white">
+            Inspect a completed AI review run.
+          </h1>
+          <p className="mt-2 text-sm text-slate-400">
+            Load findings, suggested fixes, timing, and the GitHub PR link from one workspace.
+          </p>
+        </div>
+        <form onSubmit={submitLookup} className="grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+          <input
+            type="number"
+            min="1"
+            value={draftPRNumber}
+            onChange={(event) => setDraftPRNumber(event.target.value)}
+            placeholder="PR number"
+            className="control-input"
+          />
+          <button type="submit" className="btn-primary">
+            Load Analysis
+          </button>
+          {onClose && (
+            <button type="button" onClick={onClose} className="btn-secondary">
+              Back
+            </button>
+          )}
+        </form>
+      </div>
+    </section>
+  );
+
+  if (!activePRNumber) {
+    return (
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+        <Header />
+        <div className="rounded-3xl border border-dashed border-white/15 bg-white/[0.025] p-10 text-center">
+          <p className="text-lg font-medium text-white">No PR selected yet</p>
+          <p className="mt-2 text-sm text-slate-400">
+            Use the lookup above or open a run from the Dashboard activity table.
+          </p>
+        </div>
+      </motion.div>
+    );
+  }
 
   if (loading) {
     return (
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        className="flex items-center justify-center py-12"
-      >
-        <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-violet-600 border-r-transparent mb-4" />
-          <p className="text-slate-300">Loading PR analysis...</p>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+        <Header />
+        <div className="flex items-center justify-center rounded-3xl border border-white/10 bg-white/[0.04] py-16">
+          <div className="text-center">
+            <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-cyan-300 border-r-transparent" />
+            <p className="text-slate-300">Loading PR analysis...</p>
+          </div>
         </div>
       </motion.div>
     );
@@ -55,301 +146,152 @@ export default function PRAnalysisPage({
 
   if (error) {
     return (
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="p-6 rounded-lg bg-red-900/20 border border-red-700/50 text-red-200"
-      >
-        <p>⚠️ {error}</p>
-        {onClose && (
-          <button
-            onClick={onClose}
-            className="mt-4 px-4 py-2 rounded-lg bg-red-600/30 hover:bg-red-600/50 transition-all"
-          >
-            Close
-          </button>
-        )}
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+        <Header />
+        <div className="rounded-3xl border border-red-400/20 bg-red-400/10 p-6 text-red-100">
+          {error}
+        </div>
       </motion.div>
     );
   }
 
   if (!analysis) {
     return (
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="p-6 rounded-lg bg-slate-800/50 border border-white/10 text-slate-300"
-      >
-        <p>No analysis available for this PR yet</p>
-        {onClose && (
-          <button
-            onClick={onClose}
-            className="mt-4 px-4 py-2 rounded-lg bg-violet-600/30 hover:bg-violet-600/50 transition-all"
-          >
-            Close
-          </button>
-        )}
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+        <Header />
+        <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-8 text-slate-300">
+          No analysis available for this PR yet.
+        </div>
       </motion.div>
     );
   }
 
-  const getSeverityColor = (severity) => {
-    const colors = {
-      critical: "text-red-400 bg-red-900/20",
-      high: "text-orange-400 bg-orange-900/20",
-      medium: "text-yellow-400 bg-yellow-900/20",
-      low: "text-blue-400 bg-blue-900/20",
-    };
-    return colors[severity] || colors.low;
-  };
-
-  const getCategoryIcon = (category) => {
-    const icons = {
-      security: "🔒",
-      performance: "⚡",
-      correctness: "✓",
-      maintainability: "📚",
-    };
-    return icons[category] || "📌";
-  };
-
   const findings = analysis.findings || [];
-  const status = analysis.status || "unknown";
-  const timingsMs = analysis.timingsMs || {};
+  const timings = analysis.timingsMs || {};
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="space-y-6"
-    >
-      {/* Header */}
-      <div className="border-b border-white/10 pb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="text-3xl font-bold">
-            PR #{analysis.prNumber}: {analysis.prTitle}
-          </h1>
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="px-4 py-2 rounded-lg bg-slate-700/50 hover:bg-slate-700 transition-all"
-            >
-              ✕ Close
-            </button>
-          )}
-        </div>
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+      <Header />
 
-        <div className="grid grid-cols-4 gap-4 text-sm">
+      <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <p className="text-slate-400">Author</p>
-            <p className="font-semibold text-slate-100">
-              {analysis.prAuthor || "Unknown"}
+            <p className="text-sm text-slate-500">PR #{analysis.prNumber}</p>
+            <h2 className="mt-1 text-3xl font-semibold text-white">{analysis.prTitle || "Untitled PR"}</h2>
+            <p className="mt-2 text-sm text-slate-400">
+              {analysis.prAuthor || "Unknown author"} · {analysis.status || "unknown"}
             </p>
           </div>
-          <div>
-            <p className="text-slate-400">Status</p>
-            <p
-              className={`font-semibold ${status === "completed" ? "text-green-400" : "text-yellow-400"}`}
-            >
-              {status.charAt(0).toUpperCase() + status.slice(1)}
-            </p>
-          </div>
-          <div>
-            <p className="text-slate-400">Findings</p>
-            <p className="font-semibold text-slate-100">{findings.length}</p>
-          </div>
-          <div>
-            <p className="text-slate-400">Avg Risk Score</p>
-            <p className="font-semibold text-slate-100">
-              {(analysis.avgRiskScore || 0).toFixed(1)}/100
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Performance Metrics */}
-      {Object.keys(timingsMs).length > 0 && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.1 }}
-          className="p-4 rounded-lg bg-white/5 border border-white/10"
-        >
-          <h3 className="font-semibold mb-3 text-violet-300">
-            ⏱️ Performance Metrics
-          </h3>
-          <div className="grid grid-cols-4 gap-4 text-sm">
-            {timingsMs.prOpenToLlmResponse !== undefined && (
-              <div>
-                <p className="text-slate-400">PR Open to LLM</p>
-                <p className="font-semibold">{timingsMs.prOpenToLlmResponse}ms</p>
-              </div>
-            )}
-            {timingsMs.fetchDiff !== undefined && (
-              <div>
-                <p className="text-slate-400">Diff Fetch</p>
-                <p className="font-semibold">{timingsMs.fetchDiff}ms</p>
-              </div>
-            )}
-            {timingsMs.llmAnalysis !== undefined && (
-              <div>
-                <p className="text-slate-400">AI Analysis</p>
-                <p className="font-semibold">{timingsMs.llmAnalysis}ms</p>
-              </div>
-            )}
-            {timingsMs.commentPost !== undefined && (
-              <div>
-                <p className="text-slate-400">Comment Post</p>
-                <p className="font-semibold">{timingsMs.commentPost}ms</p>
-              </div>
-            )}
-            {timingsMs.total && (
-              <div>
-                <p className="text-slate-400">Total</p>
-                <p className="font-semibold text-cyan-400">
-                  {timingsMs.total}ms
-                </p>
-              </div>
-            )}
-          </div>
-        </motion.div>
-      )}
-
-      {/* Findings List */}
-      <div>
-        <h2 className="text-2xl font-bold mb-4">
-          {findings.length === 0
-            ? "✨ No Issues Found"
-            : `🔍 ${findings.length} Finding${findings.length !== 1 ? "s" : ""}`}
-        </h2>
-
-        {findings.length === 0 ? (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="p-6 rounded-lg bg-green-900/20 border border-green-700/50 text-green-200 text-center"
+          <a
+            href={`https://github.com/${owner}/${repo}/pull/${analysis.prNumber}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-secondary text-center"
           >
-            <p className="text-lg font-semibold">
-              Great code! No issues detected. ✅
-            </p>
-          </motion.div>
+            View on GitHub
+          </a>
+        </div>
+
+        <div className="mt-6 grid gap-3 md:grid-cols-4">
+          {[
+            ["Findings", findings.length],
+            ["Comments", analysis.commentsPosted || 0],
+            ["Avg Risk", `${(analysis.avgRiskScore || 0).toFixed(1)}/100`],
+            ["Files Changed", analysis.filesChanged || 0],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+              <p className="text-xs text-slate-500">{label}</p>
+              <p className="mt-2 text-2xl font-semibold text-white">{value}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
+        <h2 className="text-xl font-semibold text-white">Performance</h2>
+        <div className="mt-4 grid gap-3 md:grid-cols-5">
+          {[
+            ["PR Open to LLM", formatMs(timings.prOpenToLlmResponse)],
+            ["Diff Fetch", formatMs(timings.fetchDiff)],
+            ["LLM Analysis", formatMs(timings.llmAnalysis)],
+            ["Comment Post", formatMs(timings.commentPost)],
+            ["Total", formatMs(timings.total)],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+              <p className="text-xs text-slate-500">{label}</p>
+              <p className="mt-2 font-semibold text-cyan-100">{value}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold text-white">Findings</h2>
+          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-400">
+            {findings.length} total
+          </span>
+        </div>
+
+        {!findings.length ? (
+          <div className="rounded-3xl border border-emerald-400/20 bg-emerald-400/10 p-8 text-center text-emerald-100">
+            No issues were detected for this PR.
+          </div>
         ) : (
-          <div className="space-y-4">
-            {findings.map((finding, idx) => (
-              <motion.div
-                key={idx}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.05 }}
-                className="p-5 rounded-lg bg-white/5 border border-white/10 hover:border-white/20 transition-all"
-              >
-                {/* Finding Header */}
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-start gap-3 flex-1">
-                    <span className="text-2xl mt-1">
-                      {getCategoryIcon(finding.category)}
-                    </span>
-                    <div className="flex-1">
-                      <h3 className="text-lg font-semibold text-slate-100">
-                        {finding.title}
-                      </h3>
-                      <p className="text-sm text-slate-400 mt-1">
-                        {finding.filePath}
-                        {finding.lineNumber && ` : line ${finding.lineNumber}`}
-                      </p>
-                    </div>
-                  </div>
-                  <div
-                    className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${getSeverityColor(finding.severity)}`}
-                  >
-                    {finding.severity?.toUpperCase()}
-                  </div>
+          findings.map((finding, index) => (
+            <motion.article
+              key={`${finding.fingerprint || finding.filePath}-${index}`}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.04 }}
+              className="rounded-3xl border border-white/10 bg-white/[0.04] p-5"
+            >
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-white">{finding.title}</h3>
+                  <p className="mt-1 font-mono text-xs text-slate-500">{finding.filePath}</p>
                 </div>
-
-                {/* Category Badge */}
-                <div className="mb-3">
-                  <span className="px-2 py-1 rounded-full text-xs bg-white/10 text-slate-300">
-                    {finding.category}
+                <div className="flex flex-wrap gap-2">
+                  <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${severityClass(finding.severity)}`}>
+                    {finding.severity || "low"}
                   </span>
-                  {finding.confidence && (
-                    <span className="ml-2 text-xs text-slate-400">
-                      Confidence: {(finding.confidence * 100).toFixed(0)}%
-                    </span>
-                  )}
+                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
+                    {finding.category || "correctness"}
+                  </span>
                 </div>
+              </div>
 
-                {/* Explanation */}
-                {finding.explanation && (
-                  <p className="text-sm text-slate-300 mb-4 leading-relaxed">
-                    {finding.explanation}
-                  </p>
-                )}
+              {finding.explanation && (
+                <p className="mt-4 text-sm leading-6 text-slate-300">{finding.explanation}</p>
+              )}
 
-                {/* Risk Score */}
-                {finding.riskScore !== undefined && (
-                  <div className="mb-4 p-3 rounded-lg bg-slate-800/50">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-semibold text-slate-400">
-                        RISK SCORE
-                      </span>
-                      <span className="text-lg font-bold text-cyan-400">
-                        {finding.riskScore.toFixed(1)}
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-700 rounded-full h-2">
-                      <div
-                        className="bg-gradient-to-r from-cyan-500 to-violet-500 h-2 rounded-full"
-                        style={{
-                          width: `${Math.min(100, finding.riskScore)}%`,
-                        }}
-                      />
-                    </div>
+              {finding.suggestion && (
+                <div className="mt-4 overflow-hidden rounded-2xl border border-white/10 bg-black/30">
+                  <div className="border-b border-white/10 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Suggested Fix
                   </div>
-                )}
+                  <pre className="overflow-auto p-4 text-xs leading-6 text-slate-200">{finding.suggestion}</pre>
+                </div>
+              )}
 
-                {/* Suggestion/Fix */}
-                {finding.suggestion && (
-                  <div className="p-4 rounded-lg bg-slate-800/50 border border-slate-700/50 font-mono text-xs text-slate-300 overflow-x-auto mb-4">
-                    <p className="font-semibold text-slate-200 mb-2">
-                      💡 Suggested Fix:
-                    </p>
-                    <pre className="whitespace-pre-wrap break-words">
-                      {finding.suggestion}
-                    </pre>
-                  </div>
-                )}
-
-                {/* Blast Radius */}
-                {finding.blastRadius && (
-                  <div className="inline-block px-3 py-1 rounded-full text-xs font-semibold bg-orange-900/30 text-orange-300 border border-orange-700/50">
-                    🎯 Blast Radius: {finding.blastRadius}
-                  </div>
-                )}
-              </motion.div>
-            ))}
-          </div>
+              <div className="mt-4 grid gap-3 text-xs md:grid-cols-3">
+                <div className="rounded-2xl bg-black/20 p-3">
+                  <p className="text-slate-500">Risk Score</p>
+                  <p className="mt-1 text-slate-100">{finding.riskScore || 0}/100</p>
+                </div>
+                <div className="rounded-2xl bg-black/20 p-3">
+                  <p className="text-slate-500">Confidence</p>
+                  <p className="mt-1 text-slate-100">{Math.round((finding.confidence || 0) * 100)}%</p>
+                </div>
+                <div className="rounded-2xl bg-black/20 p-3">
+                  <p className="text-slate-500">Blast Radius</p>
+                  <p className="mt-1 text-slate-100">{finding.blastRadius || "low"}</p>
+                </div>
+              </div>
+            </motion.article>
+          ))
         )}
-      </div>
-
-      {/* Action Buttons */}
-      <div className="flex gap-4 pt-4 border-t border-white/10">
-        <a
-          href={`https://github.com/${owner}/${repo}/pull/${analysis.prNumber}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex-1 px-6 py-3 rounded-lg bg-gradient-to-r from-violet-600 to-cyan-600 text-white hover:shadow-lg hover:shadow-violet-500/50 transition-all font-semibold text-center"
-        >
-          View on GitHub →
-        </a>
-        {onClose && (
-          <button
-            onClick={onClose}
-            className="px-6 py-3 rounded-lg border border-white/20 text-slate-300 hover:bg-white/5 transition-all"
-          >
-            Back
-          </button>
-        )}
-      </div>
+      </section>
     </motion.div>
   );
 }

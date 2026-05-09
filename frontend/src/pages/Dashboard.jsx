@@ -1,493 +1,325 @@
-import React, { useEffect, useState } from 'react'
-import { motion } from 'framer-motion'
+import React, { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
 
-const containerVariants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { staggerChildren: 0.1, delayChildren: 0.2 }
-  }
+const statusFilters = ["all", "completed", "failed", "skipped", "processing"];
+
+function formatMs(ms) {
+  if (!ms) return "N/A";
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(2)}s`;
 }
 
-const itemVariants = {
-  hidden: { opacity: 0, y: 10 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.4 } }
+function getRunHealth(run) {
+  if (run.status === "failed") return "Needs attention";
+  if (run.status === "skipped") return "Skipped";
+  if ((run.commentsPosted || 0) > 0) return "Findings posted";
+  return "Clean";
 }
 
-const DEFAULT_SETTINGS = {
-  enabled: true,
-  rules: {
-    strictMode: false,
-    ignoreLint: true,
-    securityFirst: false,
-    enableReplayGuard: true,
-    enableRiskSummary: true,
-    explanationTone: 'human',
-    maxHunksPerPR: 20,
-    maxCommentsPerPR: 10,
-  },
-}
+export default function Dashboard({
+  apiBase,
+  apiFetch,
+  owner,
+  setOwner,
+  repo,
+  setRepo,
+  onSelectPR,
+  onOpenSettings,
+}) {
+  const [history, setHistory] = useState([]);
+  const [insights, setInsights] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [query, setQuery] = useState("");
+  const [message, setMessage] = useState("");
 
-function normalizeSettings(nextSettings = {}) {
-  return {
-    ...DEFAULT_SETTINGS,
-    ...nextSettings,
-    rules: {
-      ...DEFAULT_SETTINGS.rules,
-      ...(nextSettings.rules || {}),
-    },
-  }
-}
+  const repositoryReady = owner.trim() && repo.trim();
 
-export default function Dashboard({ apiBase, apiFetch, owner, setOwner, repo, setRepo, onSelectPR }) {
-  const [settings, setSettings] = useState(DEFAULT_SETTINGS)
-  const [history, setHistory] = useState([])
-  const [insights, setInsights] = useState({})
-  const [status, setStatus] = useState('')
-  const [statusType, setStatusType] = useState('') // 'success', 'error', 'info'
-  const [loading, setLoading] = useState(false)
-
-  const loadSettings = async () => {
-    if (!owner || !repo) {
-      setStatus('⚠️ Please enter owner and repository name')
-      setStatusType('info')
-      return
+  const loadDashboard = async () => {
+    if (!repositoryReady) {
+      setMessage("Enter a GitHub owner and repository to load review activity.");
+      return;
     }
-    setLoading(true)
+
+    setLoading(true);
+    setMessage("");
     try {
-      const res = await apiFetch(`${apiBase}/settings/${owner}/${repo}`)
-      const data = await res.json()
-      if (data.ok) {
-        setSettings(normalizeSettings(data.settings))
-        setStatus('✓ Settings loaded successfully')
-        setStatusType('success')
-      } else {
-        setStatus('✗ Failed to load settings')
-        setStatusType('error')
-      }
-    } catch (err) {
-      console.error(err)
-      setStatus('✗ Error: ' + err.message)
-      setStatusType('error')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const saveSettings = async () => {
-    if (!owner || !repo) {
-      setStatus('⚠️ Please enter owner and repository name')
-      setStatusType('info')
-      return
-    }
-    setLoading(true)
-    try {
-      const res = await apiFetch(`${apiBase}/settings/${owner}/${repo}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(normalizeSettings(settings)),
-      })
-      const data = await res.json()
-      if (data.ok) {
-        setStatus('✓ Settings saved successfully')
-        setStatusType('success')
-      } else {
-        setStatus('✗ Failed to save settings')
-        setStatusType('error')
-      }
-    } catch (err) {
-      console.error(err)
-      setStatus('✗ Error: ' + err.message)
-      setStatusType('error')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const loadHistory = async () => {
-    if (!owner || !repo) {
-      setStatus('⚠️ Please enter owner and repository name')
-      setStatusType('info')
-      return
-    }
-    setLoading(true)
-    try {
-      const [histRes, insRes] = await Promise.all([
-        apiFetch(`${apiBase}/settings/${owner}/${repo}/history?limit=20`),
+      const [historyRes, insightsRes] = await Promise.all([
+        apiFetch(`${apiBase}/settings/${owner}/${repo}/history?limit=50`),
         apiFetch(`${apiBase}/settings/${owner}/${repo}/insights`),
-      ])
-      const histData = await histRes.json()
-      const insData = await insRes.json()
+      ]);
+      const historyData = await historyRes.json();
+      const insightsData = await insightsRes.json();
 
-      if (histData.ok) {
-        setHistory(histData.history || [])
-        setInsights(insData.insights || {})
-        setStatus('✓ History and insights loaded')
-        setStatusType('success')
-      } else {
-        setStatus('✗ Failed to load history')
-        setStatusType('error')
-      }
-    } catch (err) {
-      console.error(err)
-      setStatus('✗ Error: ' + err.message)
-      setStatusType('error')
+      if (!historyData.ok) throw new Error("Unable to load review history");
+      setHistory(historyData.history || []);
+      setInsights(insightsData.insights || null);
+    } catch (error) {
+      setMessage(error.message);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
-  const getStatusColor = (type) => {
-    switch (type) {
-      case 'success': return 'from-brand-success/20 to-brand-success/5 border-brand-success/30'
-      case 'error': return 'from-brand-danger/20 to-brand-danger/5 border-brand-danger/30'
-      case 'info': return 'from-brand-secondary/20 to-brand-secondary/5 border-brand-secondary/30'
-      default: return 'from-dark-800 to-dark-900 border-dark-700'
-    }
-  }
+  useEffect(() => {
+    if (repositoryReady) loadDashboard();
+  }, [owner, repo]);
 
-  const getStatusIcon = (type) => {
-    switch (type) {
-      case 'success': return '✓'
-      case 'error': return '✕'
-      case 'info': return 'ℹ'
-      default: return '●'
-    }
-  }
+  const filteredRuns = useMemo(() => {
+    return history.filter((run) => {
+      const matchesStatus = statusFilter === "all" || run.status === statusFilter;
+      const matchesQuery =
+        !query ||
+        String(run.prNumber).includes(query) ||
+        (run.prTitle || "").toLowerCase().includes(query.toLowerCase()) ||
+        (run.prAuthor || "").toLowerCase().includes(query.toLowerCase());
+      return matchesStatus && matchesQuery;
+    });
+  }, [history, statusFilter, query]);
+
+  const totals = useMemo(() => {
+    const completed = history.filter((run) => run.status === "completed");
+    const findings = history.reduce((sum, run) => sum + (run.findings?.length || 0), 0);
+    const comments = history.reduce((sum, run) => sum + (run.commentsPosted || 0), 0);
+    const avgLlm = completed.length
+      ? Math.round(
+          completed.reduce((sum, run) => sum + (run.timingsMs?.llmAnalysis || 0), 0) /
+            completed.length,
+        )
+      : 0;
+
+    return {
+      totalRuns: history.length,
+      completed: completed.length,
+      findings,
+      comments,
+      avgLlm,
+    };
+  }, [history]);
+
+  const latestRun = history[0];
 
   return (
     <motion.div
-      initial="hidden"
-      animate="visible"
-      variants={containerVariants}
-      className="space-y-8 pb-8"
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="space-y-6"
     >
-      {/* Header Section */}
-      <motion.div variants={itemVariants} className="space-y-2">
-        <h1 className="section-title">Dashboard & Configuration</h1>
-        <p className="text-dark-400">Manage your GitGuard AI settings and monitor review performance</p>
-      </motion.div>
-
-      {/* Status Alert */}
-      {status && (
-        <motion.div
-          variants={itemVariants}
-          className={`card glass border-2 bg-gradient-to-r ${getStatusColor(statusType)} flex items-center gap-4`}
-        >
-          <div className="text-2xl">{getStatusIcon(statusType)}</div>
-          <div className="flex-1">
-            <p className="text-dark-100">{status}</p>
+      <section className="relative overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.04] p-6 shadow-2xl">
+        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/50 to-transparent" />
+        <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+          <div className="max-w-2xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">
+              Production Review Console
+            </p>
+            <h1 className="mt-3 text-4xl font-semibold tracking-tight text-white">
+              Ship safer pull requests with an AI review loop.
+            </h1>
+            <p className="mt-3 text-sm leading-6 text-slate-400">
+              Monitor webhook runs, LLM findings, review latency, and comment delivery from one
+              operational dashboard.
+            </p>
           </div>
-          <button
-            onClick={() => setStatus('')}
-            className="text-dark-400 hover:text-dark-100 transition"
-          >
-            ✕
-          </button>
-        </motion.div>
+
+          <div className="grid min-w-full gap-3 rounded-2xl border border-white/10 bg-black/20 p-3 md:grid-cols-[1fr_1fr_auto] xl:min-w-[560px]">
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-slate-400">Owner</span>
+              <input
+                value={owner}
+                onChange={(event) => setOwner(event.target.value)}
+                placeholder="SampathGannena"
+                className="control-input"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-slate-400">Repository</span>
+              <input
+                value={repo}
+                onChange={(event) => setRepo(event.target.value)}
+                placeholder="gitguard-ai-sentinel"
+                className="control-input"
+              />
+            </label>
+            <button
+              onClick={loadDashboard}
+              disabled={loading || !repositoryReady}
+              className="btn-primary self-end px-5 py-3"
+            >
+              {loading ? "Loading" : "Refresh"}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {message && (
+        <div className="rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
+          {message}
+        </div>
       )}
 
-      {/* Repository Setup Section */}
-      <motion.div variants={itemVariants} className="card">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-12 h-12 rounded-lg bg-brand-primary/20 border border-brand-primary/30 flex items-center justify-center">
-            <span className="text-xl">📦</span>
-          </div>
-          <div>
-            <h2 className="subsection-title">Repository Configuration</h2>
-            <p className="text-xs text-dark-400">Connect to your GitHub repository</p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-dark-200">
-              Repository Owner
-            </label>
-            <input
-              type="text"
-              placeholder="e.g., your-org"
-              value={owner}
-              onChange={(e) => setOwner(e.target.value)}
-              className="input-field"
-            />
-            <p className="text-xs text-dark-500">GitHub organization or user name</p>
-          </div>
-
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-dark-200">
-              Repository Name
-            </label>
-            <input
-              type="text"
-              placeholder="e.g., gitguard-ai"
-              value={repo}
-              onChange={(e) => setRepo(e.target.value)}
-              className="input-field"
-            />
-            <p className="text-xs text-dark-500">Project repository name</p>
-          </div>
-        </div>
-
-        <div className="flex gap-3 mt-8">
-          <button
-            onClick={loadSettings}
-            disabled={loading || !owner || !repo}
-            className="btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        {[
+          { label: "Total Runs", value: insights?.totalRuns ?? totals.totalRuns, hint: "Webhook reviews" },
+          { label: "Completed", value: insights?.completedRuns ?? totals.completed, hint: "Successful analyses" },
+          { label: "Findings", value: totals.findings, hint: "Issues detected" },
+          { label: "Comments", value: totals.comments, hint: "Posted to GitHub" },
+          { label: "Avg LLM", value: formatMs(totals.avgLlm), hint: "Analysis time" },
+        ].map((metric) => (
+          <motion.div
+            key={metric.label}
+            whileHover={{ y: -3 }}
+            className="rounded-2xl border border-white/10 bg-white/[0.045] p-4"
           >
-            {loading ? 'Loading...' : '🔄 Load Settings'}
-          </button>
-          <button
-            onClick={saveSettings}
-            disabled={loading || !owner || !repo}
-            className="btn-secondary flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? 'Saving...' : '💾 Save Settings'}
-          </button>
-        </div>
-      </motion.div>
+            <p className="text-xs text-slate-500">{metric.label}</p>
+            <p className="mt-2 text-3xl font-semibold text-white">{metric.value}</p>
+            <p className="mt-1 text-xs text-slate-400">{metric.hint}</p>
+          </motion.div>
+        ))}
+      </section>
 
-      {/* Review Settings Section */}
-      <motion.div variants={itemVariants} className="space-y-4">
-        <div className="card">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-12 h-12 rounded-lg bg-brand-secondary/20 border border-brand-secondary/30 flex items-center justify-center">
-              <span className="text-xl">⚙️</span>
-            </div>
+      <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+        <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <h2 className="subsection-title">Review Analysis Settings</h2>
-              <p className="text-xs text-dark-400">Control how GitGuard analyzes your code</p>
+              <h2 className="text-xl font-semibold text-white">Review Activity</h2>
+              <p className="text-sm text-slate-400">Filter runs and open full PR analysis.</p>
             </div>
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search PR, title, author"
+              className="control-input md:w-64"
+            />
           </div>
 
-          {/* Feature Toggles */}
-          <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-dark-100 mt-6 mb-4">Analysis Features</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="mt-4 flex flex-wrap gap-2">
+            {statusFilters.map((filter) => (
+              <button
+                key={filter}
+                onClick={() => setStatusFilter(filter)}
+                className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
+                  statusFilter === filter
+                    ? "bg-white text-slate-950"
+                    : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
+                }`}
+              >
+                {filter.charAt(0).toUpperCase() + filter.slice(1)}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-5 overflow-hidden rounded-2xl border border-white/10">
+            <table className="w-full text-sm">
+              <thead className="bg-white/[0.04] text-left text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">PR</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Health</th>
+                  <th className="px-4 py-3 text-right">Latency</th>
+                  <th className="px-4 py-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/10">
+                {filteredRuns.map((run) => (
+                  <tr key={`${run.prNumber}-${run.headSha}`} className="hover:bg-white/[0.03]">
+                    <td className="px-4 py-3">
+                      <p className="font-mono text-cyan-200">#{run.prNumber}</p>
+                      <p className="max-w-[260px] truncate text-xs text-slate-500">
+                        {run.prTitle || "Untitled PR"}
+                      </p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`status-pill status-${run.status}`}>{run.status}</span>
+                    </td>
+                    <td className="px-4 py-3 text-slate-300">{getRunHealth(run)}</td>
+                    <td className="px-4 py-3 text-right text-slate-400">
+                      {formatMs(run.timingsMs?.total)}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => onSelectPR(run.prNumber)}
+                        className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 px-3 py-1.5 text-xs font-medium text-cyan-100 hover:bg-cyan-300/20"
+                      >
+                        Analyze
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {!filteredRuns.length && (
+                  <tr>
+                    <td colSpan="5" className="px-4 py-10 text-center text-slate-500">
+                      No review runs match this view.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+            <h2 className="text-xl font-semibold text-white">Pipeline</h2>
+            <div className="mt-5 space-y-3">
               {[
-                { key: 'enabled', label: 'Enable Reviews', desc: 'Activate GitGuard for this repository' },
-                { key: 'strictMode', label: 'Strict Mode', desc: 'Flag all potential issues, even minor ones' },
-                { key: 'securityFirst', label: 'Security First', desc: 'Prioritize security vulnerabilities' },
-                { key: 'ignoreLint', label: 'Ignore Lint Issues', desc: 'Skip styling and linter warnings' },
-                { key: 'enableReplayGuard', label: 'Replay Guard', desc: 'Prevent duplicate review comments' },
-                { key: 'enableRiskSummary', label: 'Risk Summary', desc: 'Include overall risk assessment' },
-              ].map((setting) => (
-                <label
-                  key={setting.key}
-                  className="glass rounded-xl p-4 cursor-pointer hover:bg-white/10 transition-all duration-300 flex items-start gap-3"
-                >
-                  <input
-                    type="checkbox"
-                    checked={setting.key === 'enabled' ? settings.enabled : settings.rules[setting.key]}
-                    onChange={(e) => {
-                      if (setting.key === 'enabled') {
-                        setSettings({ ...settings, enabled: e.target.checked })
-                        return
-                      }
-                      setSettings({
-                        ...settings,
-                        rules: { ...settings.rules, [setting.key]: e.target.checked },
-                      })
-                    }}
-                    className="mt-1 w-4 h-4 cursor-pointer rounded"
-                  />
-                  <div className="flex-1">
-                    <p className="font-medium text-dark-100">{setting.label}</p>
-                    <p className="text-xs text-dark-400 mt-1">{setting.desc}</p>
+                ["Webhook", "HMAC verified pull_request event"],
+                ["Diff", "Raw GitHub .diff fetched and parsed"],
+                ["LLM", "Changed lines reviewed for risk"],
+                ["Comment", "Markdown review posted to PR"],
+              ].map(([label, text], index) => (
+                <div key={label} className="flex gap-3">
+                  <div className="flex flex-col items-center">
+                    <div className="grid h-8 w-8 place-items-center rounded-full bg-cyan-300/15 text-xs font-semibold text-cyan-100">
+                      {index + 1}
+                    </div>
+                    {index < 3 && <div className="h-8 w-px bg-white/10" />}
                   </div>
-                </label>
+                  <div>
+                    <p className="font-medium text-white">{label}</p>
+                    <p className="text-sm text-slate-400">{text}</p>
+                  </div>
+                </div>
               ))}
             </div>
           </div>
 
-          {/* Configuration Options */}
-          <div className="space-y-4 mt-8">
-            <h3 className="text-sm font-semibold text-dark-100 mb-4">Review Parameters</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              <div className="space-y-3">
-                <label className="block text-sm font-medium text-dark-200">
-                  📝 Explanation Tone
-                </label>
-                <select
-                  value={settings.rules.explanationTone}
-                  onChange={(e) => setSettings({ ...settings, rules: { ...settings.rules, explanationTone: e.target.value } })}
-                  className="input-field text-dark-100"
-                >
-                  <option value="human">Human</option>
-                  <option value="concise">Concise</option>
-                  <option value="detailed">Detailed</option>
-                </select>
-                <p className="text-xs text-dark-500">Communication style for AI feedback</p>
+          <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-cyan-300/10 to-violet-400/10 p-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-200">
+              Latest Run
+            </p>
+            {latestRun ? (
+              <div className="mt-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-2xl font-semibold text-white">PR #{latestRun.prNumber}</p>
+                  <span className={`status-pill status-${latestRun.status}`}>{latestRun.status}</span>
+                </div>
+                <p className="text-sm text-slate-300">{latestRun.prTitle || "Untitled PR"}</p>
+                <div className="grid grid-cols-3 gap-3 text-center text-xs">
+                  <div className="rounded-xl bg-black/20 p-3">
+                    <p className="text-slate-500">Files</p>
+                    <p className="mt-1 text-lg text-white">{latestRun.filesChanged || 0}</p>
+                  </div>
+                  <div className="rounded-xl bg-black/20 p-3">
+                    <p className="text-slate-500">Hunks</p>
+                    <p className="mt-1 text-lg text-white">{latestRun.hunksAnalyzed || 0}</p>
+                  </div>
+                  <div className="rounded-xl bg-black/20 p-3">
+                    <p className="text-slate-500">Risk</p>
+                    <p className="mt-1 text-lg text-white">{latestRun.avgRiskScore || 0}</p>
+                  </div>
+                </div>
+                <button onClick={onOpenSettings} className="btn-secondary w-full">
+                  Tune Review Rules
+                </button>
               </div>
-
-              <div className="space-y-3">
-                <label className="block text-sm font-medium text-dark-200">
-                  🔍 Max Code Hunks per PR
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="200"
-                  value={settings.rules.maxHunksPerPR}
-                  onChange={(e) => setSettings({ ...settings, rules: { ...settings.rules, maxHunksPerPR: parseInt(e.target.value) } })}
-                  className="input-field"
-                />
-                <p className="text-xs text-dark-500">Maximum code sections to analyze</p>
-              </div>
-
-              <div className="space-y-3">
-                <label className="block text-sm font-medium text-dark-200">
-                  💬 Max Comments per PR
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={settings.rules.maxCommentsPerPR}
-                  onChange={(e) => setSettings({ ...settings, rules: { ...settings.rules, maxCommentsPerPR: parseInt(e.target.value) } })}
-                  className="input-field"
-                />
-                <p className="text-xs text-dark-500">Maximum review comments per pull request</p>
-              </div>
-            </div>
+            ) : (
+              <p className="mt-4 text-sm text-slate-400">
+                Open a PR or load a repository with history to see live activity.
+              </p>
+            )}
           </div>
         </div>
-      </motion.div>
-
-      {/* Insights Section */}
-      {Object.keys(insights).length > 0 && (
-        <motion.div variants={itemVariants} className="space-y-4">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-12 h-12 rounded-lg bg-brand-accent/20 border border-brand-accent/30 flex items-center justify-center">
-              <span className="text-xl">📊</span>
-            </div>
-            <div>
-              <h2 className="subsection-title">Repository Insights</h2>
-              <p className="text-xs text-dark-400">Performance metrics and statistics</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-            {[
-              { label: 'Total Reviews', value: insights.totalRuns || 0, icon: '📋', color: 'brand-secondary' },
-              { label: 'Completed', value: insights.completedRuns || 0, icon: '✓', color: 'brand-success' },
-              { label: 'Failed', value: insights.failedRuns || 0, icon: '✕', color: 'brand-danger' },
-              { label: 'Avg Latency', value: insights.avgTotalMs ? (insights.avgTotalMs / 1000).toFixed(2) + 's' : 'N/A', icon: '⚡', color: 'brand-primary' },
-              { label: 'Avg Risk Score', value: insights.avgRiskScore ? insights.avgRiskScore.toFixed(1) : 'N/A', icon: '⚠️', color: 'brand-accent' },
-            ].map((metric, idx) => (
-              <motion.div
-                key={idx}
-                variants={itemVariants}
-                className="card-hover"
-              >
-                <div className="flex items-center gap-3 mb-3">
-                  <span className="text-2xl">{metric.icon}</span>
-                  <p className="text-xs text-dark-400">{metric.label}</p>
-                </div>
-                <p className="text-2xl font-bold text-brand-secondary">{metric.value}</p>
-              </motion.div>
-            ))}
-          </div>
-        </motion.div>
-      )}
-
-      {/* Load History Button */}
-      {!history.length && owner && repo && (
-        <motion.div variants={itemVariants}>
-          <button
-            onClick={loadHistory}
-            disabled={loading}
-            className="w-full btn-primary py-4 text-lg font-semibold"
-          >
-            {loading ? '⏳ Loading...' : '📜 Load Review History & Statistics'}
-          </button>
-        </motion.div>
-      )}
-
-      {/* Review History Section */}
-      {history.length > 0 && (
-        <motion.div variants={itemVariants} className="card">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h2 className="subsection-title">Recent Review Activity</h2>
-              <p className="text-xs text-dark-400">Last 20 pull request reviews</p>
-            </div>
-            <badge className="badge-info">{history.length} reviews</badge>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-dark-700 text-dark-400 text-xs font-semibold uppercase tracking-wide">
-                  <th className="py-4 px-4 text-left">Timestamp</th>
-                  <th className="py-4 px-4 text-left">PR #</th>
-                  <th className="py-4 px-4 text-center">Status</th>
-                  <th className="py-4 px-4 text-center">Comments</th>
-                  <th className="py-4 px-4 text-center">Risk Score</th>
-                  <th className="py-4 px-4 text-right">Latency</th>
-                  {onSelectPR && <th className="py-4 px-4 text-right">Analysis</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-dark-700">
-                {history.map((run, idx) => (
-                  <motion.tr
-                    key={idx}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: idx * 0.05 }}
-                    className="hover:bg-white/5 transition-colors"
-                  >
-                    <td className="py-4 px-4 text-dark-300">
-                      {new Date(run.createdAt).toLocaleDateString()} {new Date(run.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </td>
-                    <td className="py-4 px-4 font-mono text-brand-secondary font-semibold">#{run.prNumber}</td>
-                    <td className="py-4 px-4 text-center">
-                      <span
-                        className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold ${
-                          run.status === 'completed'
-                            ? 'badge-success'
-                            : run.status === 'failed'
-                            ? 'badge-danger'
-                            : 'badge-warning'
-                        }`}
-                      >
-                        <span className="w-2 h-2 rounded-full bg-current" />
-                        {run.status.charAt(0).toUpperCase() + run.status.slice(1)}
-                      </span>
-                    </td>
-                    <td className="py-4 px-4 text-center text-dark-300 font-medium">
-                      {run.commentsPosted || 0}
-                    </td>
-                    <td className="py-4 px-4 text-center">
-                      <span className={`font-semibold ${
-                        (run.avgRiskScore || 0) > 7 ? 'text-brand-danger' : 
-                        (run.avgRiskScore || 0) > 4 ? 'text-brand-warning' : 
-                        'text-brand-success'
-                      }`}>
-                        {run.avgRiskScore ? run.avgRiskScore.toFixed(1) : 'N/A'}
-                      </span>
-                    </td>
-                    <td className="py-4 px-4 text-right text-dark-400">
-                      {run.timingsMs?.total ? (run.timingsMs.total / 1000).toFixed(2) + 's' : 'N/A'}
-                    </td>
-                    {onSelectPR && (
-                      <td className="py-4 px-4 text-right">
-                        <button
-                          onClick={() => onSelectPR(run.prNumber)}
-                          className="px-3 py-1 rounded-lg bg-brand-primary/20 text-brand-primary border border-brand-primary/30 hover:bg-brand-primary/30 transition"
-                        >
-                          View
-                        </button>
-                      </td>
-                    )}
-                  </motion.tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </motion.div>
-      )}
+      </section>
     </motion.div>
-  )
+  );
 }

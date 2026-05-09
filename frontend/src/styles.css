@@ -17,7 +17,7 @@ html, body, #root {
   }
 
   body {
-    @apply bg-gradient-to-br from-dark-950 via-dark-900 to-dark-950 text-dark-100;
+    @apply bg-[#09090b] text-dark-100 antialiased;
   }
 }
 
@@ -36,7 +36,7 @@ html, body, #root {
   }
 
   .card {
-    @apply glass rounded-2xl p-6 transition-all duration-300;
+    @apply glass rounded-3xl p-6 transition-all duration-300;
   }
 
   .card-hover {
@@ -45,15 +45,15 @@ html, body, #root {
 
   /* ===== Buttons ===== */
   .btn-primary {
-    @apply px-6 py-3 bg-gradient-to-r from-brand-primary to-brand-primary/80 text-white rounded-lg font-semibold hover:shadow-glow-primary transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .btn-secondary {
-    @apply px-6 py-3 bg-brand-secondary/20 border border-brand-secondary/50 text-brand-secondary rounded-lg font-semibold hover:bg-brand-secondary/30 transition-all duration-300;
+    @apply rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-slate-100 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .btn-ghost {
-    @apply px-6 py-3 bg-white/5 border border-white/10 text-dark-100 rounded-lg font-semibold hover:bg-white/10 transition-all duration-300;
+    @apply rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-dark-100 transition hover:bg-white/10;
   }
 
   .btn-danger {
@@ -86,13 +86,37 @@ html, body, #root {
     @apply w-full px-4 py-3 bg-dark-800 border border-dark-700 rounded-lg text-dark-100 placeholder-dark-500 focus:outline-none focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 transition-all duration-300;
   }
 
+  .control-input {
+    @apply w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-slate-100 placeholder-slate-600 outline-none transition focus:border-cyan-300/50 focus:bg-black/40 focus:ring-4 focus:ring-cyan-300/10;
+  }
+
   /* ===== Sections ===== */
   .section-title {
-    @apply text-3xl font-bold bg-gradient-to-r from-brand-primary to-brand-secondary bg-clip-text text-transparent mb-6;
+    @apply text-3xl font-semibold tracking-tight text-white mb-6;
   }
 
   .subsection-title {
     @apply text-xl font-semibold text-dark-100 mb-4;
+  }
+
+  .status-pill {
+    @apply inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold capitalize;
+  }
+
+  .status-completed {
+    @apply border-emerald-400/25 bg-emerald-400/10 text-emerald-200;
+  }
+
+  .status-failed {
+    @apply border-red-400/25 bg-red-400/10 text-red-200;
+  }
+
+  .status-skipped {
+    @apply border-amber-400/25 bg-amber-400/10 text-amber-100;
+  }
+
+  .status-processing {
+    @apply border-cyan-400/25 bg-cyan-400/10 text-cyan-100;
   }
 
   /* ===== Status Indicators ===== */
