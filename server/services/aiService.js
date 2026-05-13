@@ -15,13 +15,15 @@ Return ONLY valid JSON with keys:
 - category: one of security|performance|correctness|maintainability
 - confidence: number between 0 and 1
 - suggestion: string (must contain corrected code in a fenced block)
-- explanation: string (human-like, concise)
+- explanation: string (Markdown bullet list of issue(s))
 
 Rules:
 - Prioritize fix-first output.
 - ${rulesContext.strictInstruction || 'Focus on practical issues.'}
 - ${rulesContext.securityInstruction || 'Include security guidance only when relevant.'}
 - Explanation tone: ${rulesContext.tone || 'human'}.
+- Always format explanation as Markdown bullets (each line starts with "- ").
+- Always format suggestion as a fenced code block with the corrected code.
 
 Repo settings snapshot: ${JSON.stringify(teamSettings)}
 

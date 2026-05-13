@@ -6,10 +6,55 @@ function estimatePositionFromHunk(hunk) {
   return hunk.newStart || 1;
 }
 
+function formatIssues(explanation) {
+  if (!explanation) {
+    return '- No additional context provided.';
+  }
+
+  const trimmed = String(explanation).trim();
+  if (!trimmed) {
+    return '- No additional context provided.';
+  }
+
+  if (/^\s*[-*]\s+/m.test(trimmed)) {
+    return trimmed;
+  }
+
+  return trimmed
+    .split(/\r?\n+/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => `- ${line}`)
+    .join('\n');
+}
+
+function formatFixSuggestions(suggestion) {
+  if (!suggestion) {
+    return '_No fix suggestion provided._';
+  }
+
+  const trimmed = String(suggestion).trim();
+  if (!trimmed) {
+    return '_No fix suggestion provided._';
+  }
+
+  if (trimmed.includes('```')) {
+    return trimmed;
+  }
+
+  return [
+    '```',
+    trimmed,
+    '```',
+  ].join('\n');
+}
+
 async function postComments({ owner, repo, pull_number, comments }) {
   // Build review comments array for octokit
   const reviewComments = comments.map(c => {
     const line = estimatePositionFromHunk(c.hunk);
+    const issuesSection = formatIssues(c.explanation);
+    const fixesSection = formatFixSuggestions(c.suggestion);
     const body = [
       `### ${c.title || 'Suggested Fix'}`,
       `- Severity: **${c.severity || 'medium'}**`,
@@ -18,11 +63,14 @@ async function postComments({ owner, repo, pull_number, comments }) {
       `- Risk Score: **${c.riskScore || 0}/100**`,
       `- Blast Radius: **${c.blastRadius || 'low'}**`,
       '',
-      '#### Suggested patch',
-      c.suggestion,
+      '#### Issues',
+      issuesSection,
       '',
-      '#### Why this matters',
-      c.explanation || 'This change reduces risk and improves code quality.',
+      '#### Fix Suggestions',
+      fixesSection,
+      '',
+      '#### Markdown Formatting',
+      'This review uses Markdown headings, bullet lists, and code fences for clarity.',
     ].join('\n');
     return { path: c.path, line, body };
   });
