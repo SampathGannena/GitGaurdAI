@@ -2,6 +2,9 @@ const RepoSettings = require('../models/RepoSettings');
 
 const DEFAULT_SETTINGS = {
   enabled: true,
+  installationId: null,
+  githubUserId: '',
+  githubUsername: '',
   rules: {
     strictMode: false,
     ignoreLint: false,
@@ -37,6 +40,9 @@ function normalizeSettings(doc = {}) {
   return {
     owner: doc.owner,
     repo: doc.repo,
+    installationId: doc.installationId ?? DEFAULT_SETTINGS.installationId,
+    githubUserId: doc.githubUserId ?? DEFAULT_SETTINGS.githubUserId,
+    githubUsername: doc.githubUsername ?? DEFAULT_SETTINGS.githubUsername,
     enabled: doc.enabled ?? DEFAULT_SETTINGS.enabled,
     rules: {
       strictMode: doc.rules?.strictMode ?? DEFAULT_SETTINGS.rules.strictMode,

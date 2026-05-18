@@ -7,6 +7,7 @@ const repoSettingsService = require('../services/repoSettingsService');
 const rulesEngine = require('../services/rulesEngine');
 const reviewRunService = require('../services/reviewRunService');
 const reviewInsights = require('../services/reviewInsights');
+const userService = require('../services/userService');
 
 async function handleGithubWebhook(req, res, next) {
   let runContext = null;
@@ -41,7 +42,41 @@ async function handleGithubWebhook(req, res, next) {
 
     logger.info(`Processing PR ${owner}/${repo}#${prNumber}: ${prTitle} by ${prAuthor}`);
 
+    const installationId = payload.installation?.id || null;
     const teamSettings = await repoSettingsService.getOrCreateRepoSettings({ owner, repo });
+
+    if (installationId && installationId !== teamSettings.installationId) {
+      await repoSettingsService.updateRepoSettings({
+        owner,
+        repo,
+        update: { installationId },
+      });
+      teamSettings.installationId = installationId;
+    }
+
+    const effectiveInstallationId = installationId || teamSettings.installationId;
+    let accessToken = null;
+
+    if (!effectiveInstallationId) {
+      if (teamSettings.githubUserId) {
+        accessToken = await userService.getGithubAccessToken(teamSettings.githubUserId);
+      }
+
+      if (!accessToken) {
+        await reviewRunService.failRun({
+          owner,
+          repo,
+          prNumber,
+          headSha,
+          errorMessage: 'github_auth_missing',
+          timingsMs: { total: 0 },
+        }).catch(() => null);
+        return res.status(400).json({
+          ok: false,
+          message: 'GitHub auth missing. Connect GitHub or install the GitHub App.',
+        });
+      }
+    }
 
     if (teamSettings.rules.enableReplayGuard) {
       const alreadyProcessed = await reviewRunService.hasProcessedHeadSha({ owner, repo, prNumber, headSha });
@@ -54,7 +89,13 @@ async function handleGithubWebhook(req, res, next) {
     await reviewRunService.startRun({ owner, repo, prNumber, action, headSha, prTitle, prAuthor, prOpenedAt });
 
     const fetchDiffStart = Date.now();
-    const rawDiff = await githubService.fetchPullRequestDiff({ owner, repo, pull_number: prNumber });
+    const rawDiff = await githubService.fetchPullRequestDiff({
+      owner,
+      repo,
+      pull_number: prNumber,
+      installationId: effectiveInstallationId,
+      accessToken,
+    });
     const fetchDiffMs = Date.now() - fetchDiffStart;
 
     const diffs = diffAnalyzer.extractChangedHunks(rawDiff);
@@ -161,7 +202,14 @@ async function handleGithubWebhook(req, res, next) {
     const commentStart = Date.now();
 
     if (commentsToPost.length > 0) {
-      await commentService.postComments({ owner, repo, pull_number: prNumber, comments: commentsToPost });
+      await commentService.postComments({
+        owner,
+        repo,
+        pull_number: prNumber,
+        installationId: effectiveInstallationId,
+        accessToken,
+        comments: commentsToPost,
+      });
     }
 
     const commentPostMs = Date.now() - commentStart;

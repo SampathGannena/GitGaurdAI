@@ -1,5 +1,6 @@
 const repoSettingsService = require("../services/repoSettingsService");
 const reviewRunService = require("../services/reviewRunService");
+const userService = require("../services/userService");
 
 async function getRepoSettings(req, res, next) {
   try {
@@ -119,10 +120,64 @@ async function getPRAnalysis(req, res, next) {
   }
 }
 
+async function connectGithubRepo(req, res, next) {
+  try {
+    const { owner, repo } = req.params;
+    const profile = await userService.getGithubProfile(req.user.id);
+    if (!profile?.userId) {
+      return res.status(400).json({
+        ok: false,
+        error: 'github_not_connected',
+        message: 'Connect GitHub first to link this repository.',
+      });
+    }
+
+    const settings = await repoSettingsService.updateRepoSettings({
+      owner,
+      repo,
+      update: {
+        githubUserId: String(req.user.id),
+        githubUsername: profile.username || '',
+      },
+    });
+
+    res.json({ ok: true, settings });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getGithubStatus(req, res, next) {
+  try {
+    const { owner, repo } = req.params;
+    const profile = await userService.getGithubProfile(req.user.id);
+    const settings = await repoSettingsService.getOrCreateRepoSettings({ owner, repo });
+
+    const linkedToUser =
+      Boolean(settings.githubUserId) && String(settings.githubUserId) === String(req.user.id);
+
+    res.json({
+      ok: true,
+      github: {
+        connected: Boolean(profile?.userId),
+        username: profile?.username || '',
+      },
+      repo: {
+        linked: linkedToUser,
+        linkedUsername: settings.githubUsername || '',
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getRepoSettings,
   upsertRepoSettings,
   getRepoHistory,
   getRepoInsights,
   getPRAnalysis,
+  connectGithubRepo,
+  getGithubStatus,
 };

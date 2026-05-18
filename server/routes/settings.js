@@ -8,6 +8,8 @@ router.use(requireAuth);
 
 router.get("/:owner/:repo", controller.getRepoSettings);
 router.put("/:owner/:repo", controller.upsertRepoSettings);
+router.post("/:owner/:repo/connect-github", controller.connectGithubRepo);
+router.get("/:owner/:repo/github-status", controller.getGithubStatus);
 router.get("/:owner/:repo/history", controller.getRepoHistory);
 router.get("/:owner/:repo/insights", controller.getRepoInsights);
 router.get("/:owner/:repo/runs/:prNumber", controller.getPRAnalysis);

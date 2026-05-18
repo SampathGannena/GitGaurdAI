@@ -30,7 +30,53 @@ export default function SettingsPage({ apiBase, apiFetch, owner, setOwner, repo,
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
+  const [oauthStatus, setOauthStatus] = useState("");
+  const [githubStatus, setGithubStatus] = useState({
+    connected: false,
+    username: "",
+    linked: false,
+    linkedUsername: "",
+  });
   const repositoryReady = owner.trim() && repo.trim();
+
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const statusFlag = params.get("github");
+    if (!statusFlag) return;
+    setOauthStatus(statusFlag === "connected" ? "GitHub connected." : "GitHub connection failed.");
+    params.delete("github");
+    const nextQuery = params.toString();
+    const nextUrl = nextQuery ? `${window.location.pathname}?${nextQuery}` : window.location.pathname;
+    window.history.replaceState({}, "", nextUrl);
+  }, []);
+
+  React.useEffect(() => {
+    if (!repositoryReady) return;
+    let mounted = true;
+
+    const loadGithubStatus = async () => {
+      try {
+        const res = await apiFetch(`${apiBase}/settings/${owner}/${repo}/github-status`);
+        const data = await res.json();
+        if (!data.ok) return;
+        if (mounted) {
+          setGithubStatus({
+            connected: Boolean(data.github?.connected),
+            username: data.github?.username || "",
+            linked: Boolean(data.repo?.linked),
+            linkedUsername: data.repo?.linkedUsername || "",
+          });
+        }
+      } catch (error) {
+        setStatus(error.message);
+      }
+    };
+
+    loadGithubStatus();
+    return () => {
+      mounted = false;
+    };
+  }, [apiBase, apiFetch, owner, repo, repositoryReady]);
 
   const loadSettings = async () => {
     if (!repositoryReady) {
@@ -76,6 +122,45 @@ export default function SettingsPage({ apiBase, apiFetch, owner, setOwner, repo,
     }
   };
 
+  const connectGithub = async () => {
+    setStatus("");
+    try {
+      const res = await apiFetch(`${apiBase}/auth/github/start`);
+      const data = await res.json();
+      if (!data.ok || !data.url) throw new Error("Unable to start GitHub OAuth");
+      window.location.href = data.url;
+    } catch (error) {
+      setStatus(error.message);
+    }
+  };
+
+  const linkRepository = async () => {
+    if (!repositoryReady) {
+      setStatus("Enter a repository owner and name first.");
+      return;
+    }
+    setLoading(true);
+    setStatus("");
+    try {
+      const response = await apiFetch(`${apiBase}/settings/${owner}/${repo}/connect-github`, {
+        method: "POST",
+      });
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.message || "Unable to link repository");
+      setSettings(normalizeSettings(data.settings));
+      setGithubStatus((current) => ({
+        ...current,
+        linked: true,
+        linkedUsername: data.settings?.githubUsername || current.linkedUsername,
+      }));
+      setStatus("Repository linked to GitHub account.");
+    } catch (error) {
+      setStatus(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const updateRule = (key, value) => {
     setSettings((current) => ({
       ...current,
@@ -114,6 +199,39 @@ export default function SettingsPage({ apiBase, apiFetch, owner, setOwner, repo,
             <button onClick={saveSettings} disabled={loading || !repositoryReady} className="btn-primary">
               Save
             </button>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-[auto_auto_1fr]">
+          <button onClick={connectGithub} className="btn-secondary">
+            Connect GitHub
+          </button>
+          <button onClick={linkRepository} disabled={loading || !repositoryReady} className="btn-primary">
+            Link Repository
+          </button>
+          <div className="text-sm text-slate-300">
+            {oauthStatus || "Connect GitHub OAuth, then link this repository."}
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 text-sm text-slate-300 md:grid-cols-2">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <p className="text-xs uppercase tracking-[0.22em] text-slate-400">GitHub Account</p>
+            <p className="mt-2 font-semibold text-white">
+              {githubStatus.connected ? "Connected" : "Not connected"}
+            </p>
+            <p className="text-xs text-slate-400">
+              {githubStatus.connected ? `@${githubStatus.username}` : "Connect to authorize reviews."}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Repository Link</p>
+            <p className="mt-2 font-semibold text-white">
+              {githubStatus.linked ? "Linked" : "Not linked"}
+            </p>
+            <p className="text-xs text-slate-400">
+              {githubStatus.linked
+                ? `Linked to @${githubStatus.linkedUsername || "github"}`
+                : "Link the repo to enable PR comments."}
+            </p>
           </div>
         </div>
         {status && <p className="mt-4 text-sm text-slate-300">{status}</p>}

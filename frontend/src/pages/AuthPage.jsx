@@ -23,6 +23,7 @@ export default function AuthPage({ apiBase, onAuthSuccess }) {
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState('')
   const [statusType, setStatusType] = useState('info')
+  const [oauthStatus, setOauthStatus] = useState('')
 
   const submit = async (e) => {
     e.preventDefault()
@@ -50,6 +51,26 @@ export default function AuthPage({ apiBase, onAuthSuccess }) {
       setStatusType('error')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const connectGithub = async () => {
+    setOauthStatus('')
+    const token = localStorage.getItem('gitguard_auth_token')
+    if (!token) {
+      setOauthStatus('Sign in first, then connect GitHub from Settings.')
+      return
+    }
+
+    try {
+      const res = await fetch(`${apiBase}/auth/github/start`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const data = await res.json()
+      if (!data.ok || !data.url) throw new Error('Unable to start GitHub OAuth')
+      window.location.href = data.url
+    } catch (err) {
+      setOauthStatus(err.message)
     }
   }
 
@@ -151,6 +172,21 @@ export default function AuthPage({ apiBase, onAuthSuccess }) {
               {loading ? 'Please wait...' : mode === 'login' ? 'Sign In' : 'Create Account'}
             </button>
           </form>
+
+          <div className="mt-6 rounded-xl border border-dark-700 bg-dark-900/60 p-4">
+            <p className="text-xs uppercase tracking-[0.2em] text-dark-400">GitHub Access</p>
+            <p className="mt-2 text-sm text-dark-300">
+              Connect your GitHub account after signing in to enable PR reviews.
+            </p>
+            <button
+              type="button"
+              onClick={connectGithub}
+              className="mt-3 w-full rounded-lg border border-dark-700 bg-dark-800/60 py-2 text-sm font-semibold text-dark-100 hover:border-brand-primary/50"
+            >
+              Connect GitHub
+            </button>
+            {oauthStatus && <p className="mt-2 text-xs text-dark-400">{oauthStatus}</p>}
+          </div>
         </motion.div>
       </motion.div>
     </div>

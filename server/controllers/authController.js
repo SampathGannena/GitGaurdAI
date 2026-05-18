@@ -1,5 +1,8 @@
 const User = require('../models/User');
 const authService = require('../services/authService');
+const githubOAuthService = require('../services/githubOAuthService');
+const userService = require('../services/userService');
+const crypto = require('crypto');
 
 function sanitizeUser(user) {
   return {
@@ -68,8 +71,51 @@ async function me(req, res) {
   return res.json({ ok: true, user: req.user });
 }
 
+async function startGithubOAuth(req, res, next) {
+  try {
+    const state = authService.issueOAuthState({
+      userId: req.user.id,
+      nonce: crypto.randomBytes(12).toString('hex'),
+    });
+    const url = githubOAuthService.buildAuthorizeUrl({ state });
+    return res.json({ ok: true, url });
+  } catch (err) {
+    return next(err);
+  }
+}
+
+async function handleGithubCallback(req, res, next) {
+  try {
+    const code = String(req.query?.code || '');
+    const state = String(req.query?.state || '');
+
+    if (!code || !state) {
+      return res.status(400).json({ ok: false, error: 'missing_code', message: 'OAuth code/state missing' });
+    }
+
+    const payload = authService.verifyOAuthState(state);
+    const accessToken = await githubOAuthService.exchangeCodeForToken({ code, state });
+    const ghUser = await githubOAuthService.fetchGitHubUser(accessToken);
+
+    await userService.updateGithubAuth({
+      userId: payload.sub,
+      githubUserId: ghUser.id,
+      githubUsername: ghUser.login,
+      accessToken,
+    });
+
+    const redirectBase = process.env.FRONTEND_URL || 'http://localhost:5173';
+    return res.redirect(`${redirectBase}?github=connected`);
+  } catch (err) {
+    const redirectBase = process.env.FRONTEND_URL || 'http://localhost:5173';
+    return res.redirect(`${redirectBase}?github=error`);
+  }
+}
+
 module.exports = {
   register,
   login,
   me,
+  startGithubOAuth,
+  handleGithubCallback,
 };

@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 
 const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7;
+const OAUTH_STATE_TTL_SECONDS = 10 * 60;
 
 function toBase64Url(input) {
   return Buffer.from(input).toString('base64url');
@@ -55,6 +56,25 @@ function issueAuthToken(user) {
   });
 }
 
+function issueOAuthState({ userId, nonce }) {
+  const now = Math.floor(Date.now() / 1000);
+  return signToken({
+    sub: String(userId),
+    nonce,
+    typ: 'github_oauth',
+    iat: now,
+    exp: now + OAUTH_STATE_TTL_SECONDS,
+  });
+}
+
+function verifyOAuthState(token) {
+  const payload = verifyAuthToken(token);
+  if (payload.typ !== 'github_oauth') {
+    throw new Error('Invalid OAuth state token');
+  }
+  return payload;
+}
+
 function verifyAuthToken(token) {
   const [header, body, signature] = String(token || '').split('.');
   if (!header || !body || !signature) {
@@ -88,4 +108,6 @@ module.exports = {
   verifyPassword,
   issueAuthToken,
   verifyAuthToken,
+  issueOAuthState,
+  verifyOAuthState,
 };

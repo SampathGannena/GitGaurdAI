@@ -11,6 +11,7 @@ function shouldAnalyzeFile(filePath, settings) {
 
 function shouldAnalyzeHunk(hunk, settings) {
   if (!hunk || !Array.isArray(hunk.changedLines)) return false;
+  if (hunk.changedLines.length === 0) return false;
   if (!settings?.rules?.securityFirst) return true;
 
   const joined = hunk.changedLines.join('\n');

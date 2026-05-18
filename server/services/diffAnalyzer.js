@@ -18,15 +18,42 @@ function parseHunksFromPatch(patch) {
     if (current) current.lines.push(line);
   }
   if (current) hunks.push(current);
-  return hunks.map(h => ({
-    header: h.header,
-    newStart: h.newStart,
-    newCount: h.newCount,
-    patchLines: h.lines,
-    changedLines: h.lines
-      .filter(l => l.startsWith('+') && !l.startsWith('+++'))
-      .map(l => l.substring(1))
-  }));
+  return hunks.map(h => {
+    const changedLines = [];
+    const addedLineNumbers = [];
+    let newLine = h.newStart || 1;
+
+    for (const line of h.lines) {
+      if (line.startsWith('\\ No newline at end of file')) {
+        continue;
+      }
+
+      if (line.startsWith('+') && !line.startsWith('+++')) {
+        changedLines.push(line.substring(1));
+        addedLineNumbers.push(newLine);
+        newLine += 1;
+        continue;
+      }
+
+      if (line.startsWith('-') && !line.startsWith('---')) {
+        // Deletions do not advance new-file line numbers.
+        continue;
+      }
+
+      // Context line.
+      newLine += 1;
+    }
+
+    return {
+      header: h.header,
+      newStart: h.newStart,
+      newCount: h.newCount,
+      patchLines: h.lines,
+      changedLines,
+      addedLineNumbers,
+      firstAddedLine: addedLineNumbers[0] || null,
+    };
+  });
 }
 
 function parseRawDiff(rawDiff) {

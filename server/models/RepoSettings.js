@@ -22,6 +22,9 @@ const repoSettingsSchema = new mongoose.Schema(
   {
     owner: { type: String, required: true, trim: true },
     repo: { type: String, required: true, trim: true },
+    installationId: { type: Number, default: null },
+    githubUserId: { type: String, default: '' },
+    githubUsername: { type: String, default: '' },
     rules: { type: rulesSchema, default: () => ({}) },
     enabled: { type: Boolean, default: true },
   },

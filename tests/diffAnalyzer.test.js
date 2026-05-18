@@ -20,6 +20,7 @@ test('extractChangedHunks parses hunks and added lines', () => {
   assert.equal(out.length, 1);
   assert.equal(out[0].hunks.length, 1);
   assert.equal(out[0].hunks[0].changedLines[0], 'const y = 2;');
+  assert.equal(out[0].hunks[0].firstAddedLine, 2);
 });
 
 test('parseRawDiff splits a GitHub raw diff into file patches', () => {
@@ -41,4 +42,5 @@ test('parseRawDiff splits a GitHub raw diff into file patches', () => {
 
   const out = extractChangedHunks(rawDiff);
   assert.equal(out[0].hunks[0].changedLines[0], 'const y = 2;');
+  assert.equal(out[0].hunks[0].firstAddedLine, 2);
 });

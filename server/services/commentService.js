@@ -2,8 +2,9 @@ const githubService = require('./githubService');
 const logger = require('../config/logger');
 
 function estimatePositionFromHunk(hunk) {
-  // Use newStart as an anchor; GitHub API expects a line number in the file's new version
-  return hunk.newStart || 1;
+  // Prefer an actual added line in the new file to anchor the comment.
+  if (hunk?.firstAddedLine) return hunk.firstAddedLine;
+  return hunk?.newStart || null;
 }
 
 function formatIssues(explanation) {
@@ -49,10 +50,13 @@ function formatFixSuggestions(suggestion) {
   ].join('\n');
 }
 
-async function postComments({ owner, repo, pull_number, comments }) {
+async function postComments({ owner, repo, pull_number, installationId, accessToken, comments }) {
   // Build review comments array for octokit
   const reviewComments = comments.map(c => {
     const line = estimatePositionFromHunk(c.hunk);
+    if (!line) {
+      return null;
+    }
     const issuesSection = formatIssues(c.explanation);
     const fixesSection = formatFixSuggestions(c.suggestion);
     const body = [
@@ -72,13 +76,27 @@ async function postComments({ owner, repo, pull_number, comments }) {
       '#### Markdown Formatting',
       'This review uses Markdown headings, bullet lists, and code fences for clarity.',
     ].join('\n');
-    return { path: c.path, line, body };
-  });
+    return { path: c.path, line, side: 'RIGHT', body };
+  }).filter(Boolean);
 
   // Post a single review with aggregated comments
+  if (!reviewComments.length) {
+    logger.info(`No valid review comments to post for ${owner}/${repo}#${pull_number}`);
+    return;
+  }
+
   try {
     const summary = buildReviewSummary(comments);
-    await githubService.createReview({ owner, repo, pull_number, event: 'COMMENT', body: summary, comments: reviewComments });
+    await githubService.createReview({
+      owner,
+      repo,
+      pull_number,
+      installationId,
+      accessToken,
+      event: 'COMMENT',
+      body: summary,
+      comments: reviewComments,
+    });
     logger.info(`Posted ${reviewComments.length} comments to ${owner}/${repo}#${pull_number}`);
   } catch (err) {
     logger.error('Failed to post review', err.message || err);

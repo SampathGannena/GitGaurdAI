@@ -1,9 +1,16 @@
-const { Octokit } = require('@octokit/rest');
 const logger = require('../config/logger');
+const { getGitHubClient } = require('./githubAuth');
 
-const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
+async function getOctokit({ installationId, accessToken }) {
+  if (accessToken) {
+    const { Octokit } = require('@octokit/rest');
+    return new Octokit({ auth: accessToken });
+  }
+  return getGitHubClient({ installationId });
+}
 
-async function fetchPullRequestDiff({ owner, repo, pull_number }) {
+async function fetchPullRequestDiff({ owner, repo, pull_number, installationId, accessToken }) {
+  const octokit = await getOctokit({ installationId, accessToken });
   const res = await octokit.request('GET /repos/{owner}/{repo}/pulls/{pull_number}', {
     owner,
     repo,
@@ -18,7 +25,8 @@ async function fetchPullRequestDiff({ owner, repo, pull_number }) {
   return diff;
 }
 
-async function createReview({ owner, repo, pull_number, event = 'COMMENT', body = '', comments = [] }) {
+async function createReview({ owner, repo, pull_number, installationId, accessToken, event = 'COMMENT', body = '', comments = [] }) {
+  const octokit = await getOctokit({ installationId, accessToken });
   const resp = await octokit.pulls.createReview({ owner, repo, pull_number, event, body, comments });
   return resp.data;
 }
