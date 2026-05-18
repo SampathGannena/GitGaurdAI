@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const authService = require('../services/authService');
 const githubOAuthService = require('../services/githubOAuthService');
+const repoSettingsService = require('../services/repoSettingsService');
 const userService = require('../services/userService');
 const crypto = require('crypto');
 
@@ -71,6 +72,22 @@ async function me(req, res) {
   return res.json({ ok: true, user: req.user });
 }
 
+async function disconnectGithub(req, res, next) {
+  try {
+    await userService.disconnectGithubAuth(req.user.id);
+    const result = await repoSettingsService.unlinkGithubReposForUser(req.user.id);
+
+    return res.json({
+      ok: true,
+      github: { connected: false, username: '' },
+      unlinkedRepositories: result.modifiedCount || 0,
+      message: 'GitHub account disconnected.',
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
 async function startGithubOAuth(req, res, next) {
   try {
     const state = authService.issueOAuthState({
@@ -116,6 +133,7 @@ module.exports = {
   register,
   login,
   me,
+  disconnectGithub,
   startGithubOAuth,
   handleGithubCallback,
 };

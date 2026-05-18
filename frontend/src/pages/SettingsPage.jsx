@@ -36,6 +36,7 @@ export default function SettingsPage({ apiBase, apiFetch, owner, setOwner, repo,
     username: "",
     linked: false,
     linkedUsername: "",
+    unlinkedRepositories: 0,
   });
   const repositoryReady = owner.trim() && repo.trim();
 
@@ -65,6 +66,7 @@ export default function SettingsPage({ apiBase, apiFetch, owner, setOwner, repo,
             username: data.github?.username || "",
             linked: Boolean(data.repo?.linked),
             linkedUsername: data.repo?.linkedUsername || "",
+            unlinkedRepositories: 0,
           });
         }
       } catch (error) {
@@ -161,6 +163,61 @@ export default function SettingsPage({ apiBase, apiFetch, owner, setOwner, repo,
     }
   };
 
+  const unlinkRepository = async () => {
+    if (!repositoryReady) {
+      setStatus("Enter a repository owner and name first.");
+      return;
+    }
+    setLoading(true);
+    setStatus("");
+    try {
+      const response = await apiFetch(`${apiBase}/settings/${owner}/${repo}/connect-github`, {
+        method: "DELETE",
+      });
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.message || "Unable to unlink repository");
+      setSettings(normalizeSettings(data.settings));
+      setGithubStatus((current) => ({
+        ...current,
+        linked: false,
+        linkedUsername: "",
+      }));
+      setStatus("Repository unlinked from GitHub account.");
+    } catch (error) {
+      setStatus(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const disconnectGithub = async () => {
+    setLoading(true);
+    setStatus("");
+    try {
+      const response = await apiFetch(`${apiBase}/auth/github`, {
+        method: "DELETE",
+      });
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.message || "Unable to disconnect GitHub");
+      setGithubStatus({
+        connected: false,
+        username: "",
+        linked: false,
+        linkedUsername: "",
+        unlinkedRepositories: data.unlinkedRepositories || 0,
+      });
+      setStatus(
+        data.unlinkedRepositories
+          ? `GitHub disconnected. ${data.unlinkedRepositories} repository link(s) cleared.`
+          : "GitHub disconnected.",
+      );
+    } catch (error) {
+      setStatus(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const updateRule = (key, value) => {
     setSettings((current) => ({
       ...current,
@@ -201,12 +258,26 @@ export default function SettingsPage({ apiBase, apiFetch, owner, setOwner, repo,
             </button>
           </div>
         </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-[auto_auto_1fr]">
+        <div className="mt-4 grid gap-3 md:grid-cols-[auto_auto_auto_auto_1fr]">
           <button onClick={connectGithub} className="btn-secondary">
-            Connect GitHub
+            {githubStatus.connected ? "Reconnect GitHub" : "Connect GitHub"}
+          </button>
+          <button
+            onClick={disconnectGithub}
+            disabled={loading || !githubStatus.connected}
+            className="btn-danger rounded-2xl px-5 py-3 text-sm"
+          >
+            Disconnect GitHub
           </button>
           <button onClick={linkRepository} disabled={loading || !repositoryReady} className="btn-primary">
             Link Repository
+          </button>
+          <button
+            onClick={unlinkRepository}
+            disabled={loading || !repositoryReady || !githubStatus.linked}
+            className="btn-secondary"
+          >
+            Unlink Repository
           </button>
           <div className="text-sm text-slate-300">
             {oauthStatus || "Connect GitHub OAuth, then link this repository."}
@@ -215,7 +286,7 @@ export default function SettingsPage({ apiBase, apiFetch, owner, setOwner, repo,
         <div className="mt-4 grid gap-3 text-sm text-slate-300 md:grid-cols-2">
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
             <p className="text-xs uppercase tracking-[0.22em] text-slate-400">GitHub Account</p>
-            <p className="mt-2 font-semibold text-white">
+            <p className={`mt-2 ${githubStatus.connected ? "badge-success" : "badge-warning"}`}>
               {githubStatus.connected ? "Connected" : "Not connected"}
             </p>
             <p className="text-xs text-slate-400">
@@ -224,13 +295,15 @@ export default function SettingsPage({ apiBase, apiFetch, owner, setOwner, repo,
           </div>
           <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
             <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Repository Link</p>
-            <p className="mt-2 font-semibold text-white">
+            <p className={`mt-2 ${githubStatus.linked ? "badge-success" : "badge-warning"}`}>
               {githubStatus.linked ? "Linked" : "Not linked"}
             </p>
             <p className="text-xs text-slate-400">
               {githubStatus.linked
                 ? `Linked to @${githubStatus.linkedUsername || "github"}`
-                : "Link the repo to enable PR comments."}
+                : githubStatus.unlinkedRepositories
+                  ? `${githubStatus.unlinkedRepositories} repository link(s) cleared.`
+                  : "Link the repo to enable PR comments."}
             </p>
           </div>
         </div>
