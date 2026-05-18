@@ -36,6 +36,50 @@ async function updateRepoSettings({ owner, repo, update }) {
   return normalizeSettings(doc);
 }
 
+async function unlinkGithubRepo({ owner, repo, userId }) {
+  const current = await RepoSettings.findOne({ owner, repo }).lean();
+  if (!current) {
+    return getOrCreateRepoSettings({ owner, repo });
+  }
+
+  if (current.githubUserId && String(current.githubUserId) !== String(userId)) {
+    const err = new Error('Repository is linked to another GitHub account.');
+    err.status = 403;
+    err.code = 'github_link_owner_mismatch';
+    throw err;
+  }
+
+  return updateRepoSettings({
+    owner,
+    repo,
+    update: {
+      githubUserId: '',
+      githubUsername: '',
+    },
+  });
+}
+
+async function unlinkGithubReposForUser(userId) {
+  if (!userId) return { modifiedCount: 0 };
+  return RepoSettings.updateMany(
+    { githubUserId: String(userId) },
+    {
+      $set: {
+        githubUserId: '',
+        githubUsername: '',
+      },
+    },
+  );
+}
+
+async function listGithubReposForUser(userId) {
+  if (!userId) return [];
+  const docs = await RepoSettings.find({ githubUserId: String(userId) })
+    .sort({ updatedAt: -1 })
+    .lean();
+  return docs.map(normalizeSettings);
+}
+
 function normalizeSettings(doc = {}) {
   return {
     owner: doc.owner,
@@ -60,5 +104,8 @@ function normalizeSettings(doc = {}) {
 module.exports = {
   getOrCreateRepoSettings,
   updateRepoSettings,
+  unlinkGithubRepo,
+  unlinkGithubReposForUser,
+  listGithubReposForUser,
   normalizeSettings,
 };

@@ -39,6 +39,23 @@ async function upsertRepoSettings(req, res, next) {
   }
 }
 
+async function listLinkedRepositories(req, res, next) {
+  try {
+    const repositories = await repoSettingsService.listGithubReposForUser(req.user.id);
+    res.json({
+      ok: true,
+      repositories: repositories.map((settings) => ({
+        owner: settings.owner,
+        repo: settings.repo,
+        githubUsername: settings.githubUsername,
+        enabled: settings.enabled,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function getRepoHistory(req, res, next) {
   try {
     const { owner, repo } = req.params;
@@ -147,6 +164,28 @@ async function connectGithubRepo(req, res, next) {
   }
 }
 
+async function unlinkGithubRepo(req, res, next) {
+  try {
+    const { owner, repo } = req.params;
+    const settings = await repoSettingsService.unlinkGithubRepo({
+      owner,
+      repo,
+      userId: req.user.id,
+    });
+
+    res.json({ ok: true, settings });
+  } catch (err) {
+    if (err.status) {
+      return res.status(err.status).json({
+        ok: false,
+        error: err.code || 'github_unlink_failed',
+        message: err.message,
+      });
+    }
+    next(err);
+  }
+}
+
 async function getGithubStatus(req, res, next) {
   try {
     const { owner, repo } = req.params;
@@ -175,9 +214,11 @@ async function getGithubStatus(req, res, next) {
 module.exports = {
   getRepoSettings,
   upsertRepoSettings,
+  listLinkedRepositories,
   getRepoHistory,
   getRepoInsights,
   getPRAnalysis,
   connectGithubRepo,
+  unlinkGithubRepo,
   getGithubStatus,
 };

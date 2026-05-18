@@ -27,15 +27,34 @@ async function getGithubAccessToken(userId) {
 
 async function getGithubProfile(userId) {
   const user = await User.findById(userId).lean();
-  if (!user?.github) return null;
+  if (!user?.github?.userId) return null;
   return {
     userId: user.github.userId,
     username: user.github.username,
   };
 }
 
+async function disconnectGithubAuth(userId) {
+  if (!userId) {
+    throw new Error('user_id_required');
+  }
+
+  return User.findByIdAndUpdate(
+    userId,
+    {
+      $set: {
+        'github.userId': null,
+        'github.username': '',
+        'github.accessTokenEncrypted': '',
+      },
+    },
+    { new: true },
+  );
+}
+
 module.exports = {
   updateGithubAuth,
+  disconnectGithubAuth,
   getGithubAccessToken,
   getGithubProfile,
 };

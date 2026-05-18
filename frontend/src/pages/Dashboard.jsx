@@ -20,11 +20,10 @@ export default function Dashboard({
   apiBase,
   apiFetch,
   owner,
-  setOwner,
   repo,
-  setRepo,
   onSelectPR,
   onOpenSettings,
+  repositoryLoading = false,
 }) {
   const [history, setHistory] = useState([]);
   const [insights, setInsights] = useState(null);
@@ -37,7 +36,7 @@ export default function Dashboard({
 
   const loadDashboard = async () => {
     if (!repositoryReady) {
-      setMessage("Enter a GitHub owner and repository to load review activity.");
+      setMessage("Set up a repository in Settings to load review activity.");
       return;
     }
 
@@ -121,31 +120,26 @@ export default function Dashboard({
             </p>
           </div>
 
-          <div className="grid min-w-full gap-3 rounded-2xl border border-white/10 bg-black/20 p-3 md:grid-cols-[1fr_1fr_auto] xl:min-w-[560px]">
-            <label className="space-y-1">
-              <span className="text-xs font-medium text-slate-400">Owner</span>
-              <input
-                value={owner}
-                onChange={(event) => setOwner(event.target.value)}
-                placeholder="SampathGannena"
-                className="control-input"
-              />
-            </label>
-            <label className="space-y-1">
+          <div className="grid min-w-full gap-3 rounded-2xl border border-white/10 bg-black/20 p-3 md:grid-cols-[1fr_auto_auto] xl:min-w-[560px]">
+            <div className="min-w-0 space-y-1">
               <span className="text-xs font-medium text-slate-400">Repository</span>
-              <input
-                value={repo}
-                onChange={(event) => setRepo(event.target.value)}
-                placeholder="gitguard-ai-sentinel"
-                className="control-input"
-              />
-            </label>
+              <p className="truncate rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-slate-100">
+                {repositoryLoading
+                  ? "Loading linked repository..."
+                  : repositoryReady
+                    ? `${owner}/${repo}`
+                    : "No repository configured"}
+              </p>
+            </div>
             <button
               onClick={loadDashboard}
-              disabled={loading || !repositoryReady}
+              disabled={loading || repositoryLoading || !repositoryReady}
               className="btn-primary self-end px-5 py-3"
             >
               {loading ? "Loading" : "Refresh"}
+            </button>
+            <button onClick={onOpenSettings} className="btn-secondary self-end px-5 py-3">
+              Settings
             </button>
           </div>
         </div>

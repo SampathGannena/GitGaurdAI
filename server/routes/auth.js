@@ -7,6 +7,7 @@ const router = express.Router();
 router.post('/register', controller.register);
 router.post('/login', controller.login);
 router.get('/me', requireAuth, controller.me);
+router.delete('/github', requireAuth, controller.disconnectGithub);
 router.get('/github/start', requireAuth, controller.startGithubOAuth);
 router.get('/github/callback', controller.handleGithubCallback);
 
