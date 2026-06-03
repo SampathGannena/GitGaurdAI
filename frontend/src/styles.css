@@ -64,6 +64,26 @@ html, body, #root {
     @apply px-6 py-3 bg-brand-danger/20 border border-brand-danger/50 text-brand-danger rounded-lg font-semibold hover:bg-brand-danger/30 transition-all duration-300;
   }
 
+  .btn-action {
+    @apply rounded-full border border-cyan-300/30 bg-cyan-300/10 px-3 py-1 text-[11px] font-semibold text-cyan-100 transition hover:bg-cyan-300/20;
+  }
+
+  .btn-view {
+    @apply rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold text-slate-200 transition hover:bg-white/20;
+  }
+
+  .btn-scan {
+    @apply relative overflow-hidden rounded-full border border-violet-400/50 bg-violet-400/20 px-3 py-1 text-[11px] font-semibold text-violet-100 transition hover:bg-violet-400/30 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .btn-scan::after {
+    content: "";
+    @apply pointer-events-none absolute inset-0;
+    background: linear-gradient(120deg, transparent 0%, rgba(255, 255, 255, 0.55) 45%, transparent 90%);
+    transform: translateX(-140%);
+    animation: scan-shine 2.6s ease-in-out infinite;
+  }
+
   /* ===== Badges ===== */
   .badge {
     @apply inline-block px-3 py-1 rounded-full text-xs font-semibold;
@@ -402,6 +422,18 @@ html, body, #root {
 
   .footer-meta {
     @apply mt-6 flex flex-col gap-2 text-xs text-slate-500;
+  }
+}
+
+@keyframes scan-shine {
+  0% {
+    transform: translateX(-140%);
+  }
+  55% {
+    transform: translateX(140%);
+  }
+  100% {
+    transform: translateX(140%);
   }
 }
 

@@ -625,12 +625,14 @@ export default function App() {
         <div className="flex flex-1 min-h-0">
         <aside
           className={`sticky top-0 hidden h-screen shrink-0 border-r border-white/10 bg-white/[0.035] p-3 backdrop-blur-xl transition-all duration-300 lg:flex lg:flex-col ${
-            sidebarCollapsed ? "w-[88px]" : "w-72"
+            sidebarCollapsed ? "w-[88px] items-center" : "w-72"
           }`}
         >
           <div
-            className={`flex items-center border border-white/10 bg-black/25 p-3 ${
-              sidebarCollapsed ? "justify-center rounded-full" : "gap-3 rounded-2xl"
+            className={`flex items-center ${
+              sidebarCollapsed
+                ? "justify-center rounded-full border-0 bg-transparent p-0"
+                : "gap-3 rounded-2xl border border-white/10 bg-black/25 p-3"
             }`}
           >
             <div className="relative grid h-11 w-11 shrink-0 place-items-center rounded-full bg-gradient-to-br from-cyan-300 via-sky-200 to-white text-slate-950 shadow-lg shadow-cyan-500/40">
@@ -664,7 +666,13 @@ export default function App() {
             )}
           </div>
 
-          <nav className="mt-5 flex-1 space-y-2 overflow-y-auto pr-1 smooth-scroll">
+          <nav
+            className={`mt-6 flex-1 overflow-y-auto smooth-scroll ${
+              sidebarCollapsed
+                ? "flex flex-col items-center gap-4 pt-2"
+                : "space-y-2 pr-1"
+            }`}
+          >
             {pages.filter((page) => page.showInSidebar !== false).map((page) => (
               <button
                 key={page.id}
@@ -672,7 +680,7 @@ export default function App() {
                 title={sidebarCollapsed ? page.label : undefined}
                 className={`group flex items-center text-left text-sm transition ${
                   sidebarCollapsed
-                    ? "mx-auto h-11 w-11 justify-center rounded-full border border-white/10 bg-black/85 p-0"
+                    ? "h-11 w-11 justify-center rounded-full border border-white/10 bg-black/85 p-0"
                     : "w-full gap-3 rounded-2xl px-3 py-2.5"
                 } ${
                   currentPage === page.id

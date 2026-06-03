@@ -27,6 +27,7 @@ const reviewRunSchema = new mongoose.Schema(
     prAuthor: { type: String, default: '' },
     prOpenedAt: { type: Date },
     llmCompletedAt: { type: Date },
+    reviewId: { type: Number },
     status: { type: String, enum: ['processing', 'completed', 'failed', 'skipped'], default: 'processing' },
     skippedReason: { type: String, default: '' },
     timingsMs: {

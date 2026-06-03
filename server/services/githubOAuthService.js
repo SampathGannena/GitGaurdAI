@@ -20,6 +20,7 @@ function buildAuthorizeUrl({ state }) {
     redirect_uri: redirectUri,
     scope: scopes,
     state,
+    prompt: 'login',
   });
   return `https://github.com/login/oauth/authorize?${params.toString()}`;
 }

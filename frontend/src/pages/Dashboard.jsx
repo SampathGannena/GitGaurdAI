@@ -31,12 +31,21 @@ export default function Dashboard({
   const [statusFilter, setStatusFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [message, setMessage] = useState("");
+  const [linkedRepos, setLinkedRepos] = useState([]);
+  const [reposLoading, setReposLoading] = useState(false);
+  const [reposError, setReposError] = useState("");
+  const [showAllRepos, setShowAllRepos] = useState(false);
+  const [openPulls, setOpenPulls] = useState([]);
+  const [closedPulls, setClosedPulls] = useState([]);
+  const [pullsLoading, setPullsLoading] = useState(false);
+  const [pullsError, setPullsError] = useState("");
+  const [activityMode, setActivityMode] = useState("runs");
+  const [scanLoading, setScanLoading] = useState(false);
 
   const repositoryReady = owner.trim() && repo.trim();
 
   const loadDashboard = async () => {
     if (!repositoryReady) {
-      setMessage("Set up a repository in Settings to load review activity.");
       return;
     }
 
@@ -63,6 +72,65 @@ export default function Dashboard({
   useEffect(() => {
     if (repositoryReady) loadDashboard();
   }, [owner, repo]);
+
+  useEffect(() => {
+    if (!repositoryReady) return;
+    let isActive = true;
+    const loadPulls = async (state, setter) => {
+      setPullsLoading(true);
+      setPullsError("");
+      try {
+        const response = await apiFetch(`${apiBase}/settings/${owner}/${repo}/pulls?state=${state}`);
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.message || `Unable to load ${state} pull requests`);
+        }
+        if (isActive) {
+          setter(data.pullRequests || []);
+        }
+      } catch (error) {
+        if (isActive) setPullsError(error.message);
+      } finally {
+        if (isActive) setPullsLoading(false);
+      }
+    };
+
+    loadPulls("open", setOpenPulls);
+    loadPulls("closed", setClosedPulls);
+    return () => {
+      isActive = false;
+    };
+  }, [apiBase, apiFetch, owner, repo, repositoryReady]);
+
+  useEffect(() => {
+    let isActive = true;
+    const loadRepos = async () => {
+      setReposLoading(true);
+      setReposError("");
+      try {
+        const response = await apiFetch(`${apiBase}/settings/repositories`);
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.message || "Unable to load connected repositories");
+        }
+        if (isActive) {
+          const sorted = [...(data.repositories || [])]
+            .filter((item) => item?.owner && item?.repo)
+            .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+          setLinkedRepos(sorted);
+        }
+      } catch (error) {
+        if (isActive) setReposError(error.message);
+      } finally {
+        if (isActive) setReposLoading(false);
+      }
+    };
+
+    loadRepos();
+    return () => {
+      isActive = false;
+    };
+  }, [apiBase, apiFetch]);
 
   const filteredRuns = useMemo(() => {
     return history.filter((run) => {
@@ -97,6 +165,47 @@ export default function Dashboard({
   }, [history]);
 
   const latestRun = history[0];
+  const visibleRepos = showAllRepos ? linkedRepos : linkedRepos.slice(0, 4);
+  const showRuns = activityMode === "runs";
+  const showOpenPulls = activityMode === "open";
+  const activePulls = showOpenPulls ? openPulls : closedPulls;
+
+  const formatConnectedAt = (value) => {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleString();
+  };
+
+  const handleRunScanClick = async (prNumber) => {
+    if (!owner || !repo) {
+      setMessage("Set a repository before running a scan.");
+      return;
+    }
+    if (!prNumber) {
+      setMessage("Select an open PR to run a scan.");
+      return;
+    }
+
+    setScanLoading(true);
+    setMessage("");
+    try {
+      const response = await apiFetch(
+        `${apiBase}/settings/${owner}/${repo}/pulls/${prNumber}/scan`,
+        { method: "POST" },
+      );
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Unable to enqueue AI scan");
+      }
+      const jobText = data.jobId ? ` (job ${data.jobId})` : "";
+      setMessage(`AI scan queued for PR #${data.prNumber}${jobText}.`);
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setScanLoading(false);
+    }
+  };
 
   return (
     <motion.div
@@ -186,8 +295,38 @@ export default function Dashboard({
             />
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-2">
-            {statusFilters.map((filter) => (
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setActivityMode("runs")}
+              className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
+                showRuns
+                  ? "bg-white text-slate-950"
+                  : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
+              }`}
+            >
+              Review Runs
+            </button>
+            <button
+              onClick={() => setActivityMode("open")}
+              className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
+                showOpenPulls
+                  ? "bg-white text-slate-950"
+                  : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
+              }`}
+            >
+              Open PRs
+            </button>
+            <button
+              onClick={() => setActivityMode("closed")}
+              className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
+                activityMode === "closed"
+                  ? "bg-white text-slate-950"
+                  : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
+              }`}
+            >
+              Closed PRs
+            </button>
+            {showRuns && statusFilters.map((filter) => (
               <button
                 key={filter}
                 onClick={() => setStatusFilter(filter)}
@@ -205,16 +344,26 @@ export default function Dashboard({
           <div className="mt-5 overflow-hidden rounded-2xl border border-white/10">
             <table className="w-full text-sm">
               <thead className="bg-white/[0.04] text-left text-xs uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-4 py-3">PR</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Health</th>
-                  <th className="px-4 py-3 text-right">Latency</th>
-                  <th className="px-4 py-3 text-right">Action</th>
-                </tr>
+                {showRuns ? (
+                  <tr>
+                    <th className="px-4 py-3">PR</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3">Health</th>
+                    <th className="px-4 py-3 text-right">Latency</th>
+                    <th className="px-4 py-3 text-right">Action</th>
+                  </tr>
+                ) : (
+                  <tr>
+                    <th className="px-4 py-3">PR</th>
+                    <th className="px-4 py-3">Title</th>
+                    <th className="px-4 py-3">Author</th>
+                    <th className="px-4 py-3 text-right">Updated</th>
+                    <th className="px-4 py-3 text-right">Action</th>
+                  </tr>
+                )}
               </thead>
               <tbody className="divide-y divide-white/10">
-                {filteredRuns.map((run) => (
+                {showRuns && filteredRuns.map((run) => (
                   <tr key={`${run.prNumber}-${run.headSha}`} className="hover:bg-white/[0.03]">
                     <td className="px-4 py-3">
                       <p className="font-mono text-cyan-200">#{run.prNumber}</p>
@@ -232,17 +381,72 @@ export default function Dashboard({
                     <td className="px-4 py-3 text-right">
                       <button
                         onClick={() => onSelectPR(run.prNumber)}
-                        className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 px-3 py-1.5 text-xs font-medium text-cyan-100 hover:bg-cyan-300/20"
+                        className="btn-action"
                       >
                         Analyze
                       </button>
                     </td>
                   </tr>
                 ))}
-                {!filteredRuns.length && (
+                {showRuns && !filteredRuns.length && (
                   <tr>
                     <td colSpan="5" className="px-4 py-10 text-center text-slate-500">
                       No review runs match this view.
+                    </td>
+                  </tr>
+                )}
+                {!showRuns && pullsLoading && (
+                  <tr>
+                    <td colSpan="5" className="px-4 py-10 text-center text-slate-500">
+                      Loading pull requests...
+                    </td>
+                  </tr>
+                )}
+                {!showRuns && !pullsLoading && pullsError && (
+                  <tr>
+                    <td colSpan="5" className="px-4 py-10 text-center text-amber-200">
+                      {pullsError}
+                    </td>
+                  </tr>
+                )}
+                {!showRuns && !pullsLoading && !pullsError && activePulls.map((pr) => (
+                  <tr key={pr.number} className="hover:bg-white/[0.03]">
+                    <td className="px-4 py-3">
+                      <p className="font-mono text-cyan-200">#{pr.number}</p>
+                    </td>
+                    <td className="px-4 py-3 text-slate-200">
+                      {pr.title || "Untitled PR"}
+                    </td>
+                    <td className="px-4 py-3 text-slate-400">{pr.user || "Unknown"}</td>
+                    <td className="px-4 py-3 text-right text-slate-400">
+                      {pr.updatedAt ? new Date(pr.updatedAt).toLocaleString() : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleRunScanClick(pr.number)}
+                          className="rounded-full border border-violet-400/40 bg-violet-400/20 px-3 py-1 text-[11px] font-semibold text-violet-100 hover:bg-violet-400/30 disabled:cursor-not-allowed disabled:opacity-60"
+                          disabled={scanLoading}
+                        >
+                          {scanLoading ? "Queuing..." : "Run AI scan"}
+                        </button>
+                        <a
+                          href={pr.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-[11px] font-semibold text-slate-200 hover:bg-white/20"
+                        >
+                          View PR
+                        </a>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {!showRuns && !pullsLoading && !pullsError && !activePulls.length && (
+                  <tr>
+                    <td colSpan="5" className="px-4 py-10 text-center text-slate-500">
+                      No pull requests found.
                     </td>
                   </tr>
                 )}
@@ -253,28 +457,89 @@ export default function Dashboard({
 
         <div className="space-y-4">
           <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
-            <h2 className="text-xl font-semibold text-white">Pipeline</h2>
-            <div className="mt-5 space-y-3">
-              {[
-                ["Webhook", "HMAC verified pull_request event"],
-                ["Diff", "Raw GitHub .diff fetched and parsed"],
-                ["LLM", "Changed lines reviewed for risk"],
-                ["Comment", "Markdown review posted to PR"],
-              ].map(([label, text], index) => (
-                <div key={label} className="flex gap-3">
-                  <div className="flex flex-col items-center">
-                    <div className="grid h-8 w-8 place-items-center rounded-full bg-cyan-300/15 text-xs font-semibold text-cyan-100">
-                      {index + 1}
-                    </div>
-                    {index < 3 && <div className="h-8 w-px bg-white/10" />}
-                  </div>
-                  <div>
-                    <p className="font-medium text-white">{label}</p>
-                    <p className="text-sm text-slate-400">{text}</p>
-                  </div>
-                </div>
-              ))}
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-white">Connected Repositories</h2>
+              <button onClick={onOpenSettings} className="btn-secondary px-3 py-1.5 text-xs">
+                Manage
+              </button>
             </div>
+            <p className="mt-2 text-xs text-slate-500">Most recently linked repositories</p>
+
+            {reposLoading && (
+              <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-slate-400">
+                Loading connected repositories...
+              </div>
+            )}
+
+            {!reposLoading && reposError && (
+              <div className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
+                {reposError}
+              </div>
+            )}
+
+            {!reposLoading && !reposError && linkedRepos.length === 0 && (
+              <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-4 text-sm text-slate-400">
+                No repositories connected yet. Link one in Settings.
+              </div>
+            )}
+
+            {!reposLoading && !reposError && linkedRepos.length > 0 && (
+              <div className="mt-4 space-y-3">
+                {visibleRepos.map((item) => (
+                  <div
+                    key={`${item.owner}/${item.repo}`}
+                    className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-3"
+                  >
+                    <div>
+                      <p className="text-sm font-semibold text-white">
+                        {item.owner}/{item.repo}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {item.githubUsername ? `Linked as @${item.githubUsername}` : "Linked"}
+                      </p>
+                      {item.updatedAt && (
+                        <p className="text-[11px] text-slate-500">
+                          Last connected: {formatConnectedAt(item.updatedAt)}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleRunScanClick(openPulls[0]?.number || closedPulls[0]?.number)}
+                        className="btn-scan"
+                        disabled={scanLoading || (!openPulls.length && !closedPulls.length)}
+                        title={
+                          !openPulls.length && !closedPulls.length
+                            ? "No pull requests to scan"
+                            : "Run AI scan on latest PR"
+                        }
+                      >
+                        {scanLoading ? "Queuing..." : "Run AI scan"}
+                      </button>
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                          item.enabled
+                            ? "bg-emerald-400/15 text-emerald-200"
+                            : "bg-slate-400/15 text-slate-300"
+                        }`}
+                      >
+                        {item.enabled ? "Active" : "Paused"}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+                {linkedRepos.length > 4 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllRepos((value) => !value)}
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-300 hover:bg-white/10"
+                  >
+                    {showAllRepos ? "Show less" : "View all"}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-cyan-300/10 to-violet-400/10 p-5">

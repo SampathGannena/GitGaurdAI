@@ -52,23 +52,25 @@ export default function SettingsPage({ apiBase, apiFetch, owner, setOwner, repo,
   }, []);
 
   React.useEffect(() => {
-    if (!repositoryReady) return;
     let mounted = true;
 
     const loadGithubStatus = async () => {
       try {
-        const res = await apiFetch(`${apiBase}/settings/${owner}/${repo}/github-status`);
+        const endpoint = repositoryReady
+          ? `${apiBase}/settings/${owner}/${repo}/github-status`
+          : `${apiBase}/auth/github/status`;
+        const res = await apiFetch(endpoint);
         const data = await res.json();
         if (!data.ok) return;
-        if (mounted) {
-          setGithubStatus({
-            connected: Boolean(data.github?.connected),
-            username: data.github?.username || "",
-            linked: Boolean(data.repo?.linked),
-            linkedUsername: data.repo?.linkedUsername || "",
-            unlinkedRepositories: 0,
-          });
-        }
+        if (!mounted) return;
+        setGithubStatus((current) => ({
+          ...current,
+          connected: Boolean(data.github?.connected),
+          username: data.github?.username || "",
+          linked: repositoryReady ? Boolean(data.repo?.linked) : false,
+          linkedUsername: repositoryReady ? data.repo?.linkedUsername || "" : "",
+          unlinkedRepositories: 0,
+        }));
       } catch (error) {
         setStatus(error.message);
       }

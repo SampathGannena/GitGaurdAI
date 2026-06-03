@@ -88,6 +88,21 @@ async function disconnectGithub(req, res, next) {
   }
 }
 
+async function getGithubStatus(req, res, next) {
+  try {
+    const profile = await userService.getGithubProfile(req.user.id);
+    return res.json({
+      ok: true,
+      github: {
+        connected: Boolean(profile?.userId),
+        username: profile?.username || '',
+      },
+    });
+  } catch (err) {
+    return next(err);
+  }
+}
+
 async function startGithubOAuth(req, res, next) {
   try {
     const state = authService.issueOAuthState({
@@ -134,6 +149,7 @@ module.exports = {
   login,
   me,
   disconnectGithub,
+  getGithubStatus,
   startGithubOAuth,
   handleGithubCallback,
 };

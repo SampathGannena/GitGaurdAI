@@ -1,5 +1,6 @@
 const axios = require('axios');
 const logger = require('../config/logger');
+const { retryAsync } = require('./retry');
 
 const DEFAULT_GROQ_MODEL = 'llama-3.3-70b-versatile';
 const DEPRECATED_GROQ_MODELS = new Set(['mixtral-8x7b-32768']);
@@ -36,13 +37,32 @@ Diff context:
 ${hunk.patchLines.join('\n')}`;
 
   try {
-    // Use Groq API for fast LLM inference
-    const res = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-      model: getGroqModel(),
-      messages: [{ role: 'system', content: 'You are a helpful code reviewer.' }, { role: 'user', content: prompt }],
-      temperature: 0.2,
-      max_tokens: 800
-    }, { headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` } });
+    const res = await retryAsync(
+      () => axios.post(
+        'https://api.groq.com/openai/v1/chat/completions',
+        {
+          model: getGroqModel(),
+          messages: [
+            { role: 'system', content: 'You are a helpful code reviewer.' },
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.2,
+          max_tokens: 800
+        },
+        {
+          headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
+          timeout: 20000,
+        }
+      ),
+      {
+        retries: 2,
+        minDelayMs: 500,
+        maxDelayMs: 3000,
+        onRetry: ({ attempt, delayMs, error }) => {
+          logger.warn(`Retrying Groq analysis (${attempt + 1}/3) in ${delayMs}ms: ${error.message || error}`);
+        },
+      }
+    );
 
     const text = res.data.choices?.[0]?.message?.content || '';
     const parsed = safeJsonParse(text);

@@ -14,6 +14,8 @@ router.delete("/:owner/:repo/connect-github", controller.unlinkGithubRepo);
 router.get("/:owner/:repo/github-status", controller.getGithubStatus);
 router.get("/:owner/:repo/history", controller.getRepoHistory);
 router.get("/:owner/:repo/insights", controller.getRepoInsights);
+router.get("/:owner/:repo/pulls", controller.getOpenPullRequests);
+router.post("/:owner/:repo/pulls/:prNumber/scan", controller.runOpenPullRequestScan);
 router.get("/:owner/:repo/runs/:prNumber", controller.getPRAnalysis);
 
 module.exports = router;

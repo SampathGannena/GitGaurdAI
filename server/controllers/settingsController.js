@@ -1,6 +1,8 @@
 const repoSettingsService = require("../services/repoSettingsService");
 const reviewRunService = require("../services/reviewRunService");
 const userService = require("../services/userService");
+const githubService = require("../services/githubService");
+const { enqueuePullRequestJob } = require("../services/jobQueue");
 
 async function getRepoSettings(req, res, next) {
   try {
@@ -49,6 +51,7 @@ async function listLinkedRepositories(req, res, next) {
         repo: settings.repo,
         githubUsername: settings.githubUsername,
         enabled: settings.enabled,
+        updatedAt: settings.updatedAt,
       })),
     });
   } catch (err) {
@@ -110,6 +113,107 @@ async function getRepoInsights(req, res, next) {
         avgTotalMs,
         avgRiskScore,
       },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getOpenPullRequests(req, res, next) {
+  try {
+    const { owner, repo } = req.params;
+    const state = req.query.state === "closed" ? "closed" : "open";
+    const teamSettings = await repoSettingsService.getOrCreateRepoSettings({ owner, repo });
+    const installationId = teamSettings.installationId || null;
+    let accessToken = null;
+
+    if (!installationId && teamSettings.githubUserId) {
+      accessToken = await userService.getGithubAccessToken(teamSettings.githubUserId);
+    }
+
+    if (!installationId && !accessToken) {
+      return res.status(400).json({
+        ok: false,
+        message: 'GitHub auth missing. Connect GitHub or install the GitHub App.',
+      });
+    }
+
+    const pulls = await githubService.listOpenPullRequests({
+      owner,
+      repo,
+      installationId,
+      accessToken,
+      state,
+    });
+
+    res.json({
+      ok: true,
+      pullRequests: pulls.map((pr) => ({
+        number: pr.number,
+        title: pr.title,
+        user: pr.user?.login || '',
+        updatedAt: pr.updated_at,
+        url: pr.html_url,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function runOpenPullRequestScan(req, res, next) {
+  try {
+    const { owner, repo, prNumber } = req.params;
+    const pullNumber = Number(prNumber);
+    if (!Number.isFinite(pullNumber) || pullNumber < 1) {
+      return res.status(400).json({ ok: false, message: "Invalid PR number" });
+    }
+
+    const teamSettings = await repoSettingsService.getOrCreateRepoSettings({ owner, repo });
+    const installationId = teamSettings.installationId || null;
+    let accessToken = null;
+
+    if (!installationId && teamSettings.githubUserId) {
+      accessToken = await userService.getGithubAccessToken(teamSettings.githubUserId);
+    }
+
+    if (!installationId && !accessToken) {
+      return res.status(400).json({
+        ok: false,
+        message: "GitHub auth missing. Connect GitHub or install the GitHub App.",
+      });
+    }
+
+    const pr = await githubService.getPullRequest({
+      owner,
+      repo,
+      pull_number: pullNumber,
+      installationId,
+      accessToken,
+    });
+
+    const payload = {
+      action: "opened",
+      number: pr.number,
+      pull_request: {
+        title: pr.title,
+        user: { login: pr.user?.login || "" },
+        head: { sha: pr.head?.sha || "unknown-sha" },
+        created_at: pr.created_at,
+      },
+      repository: {
+        name: repo,
+        owner: { login: owner },
+      },
+      installation: installationId ? { id: installationId } : undefined,
+    };
+
+    const job = await enqueuePullRequestJob(payload, "pull_request");
+
+    res.json({
+      ok: true,
+      jobId: job.id,
+      prNumber: pr.number,
     });
   } catch (err) {
     next(err);
@@ -218,6 +322,8 @@ module.exports = {
   getRepoHistory,
   getRepoInsights,
   getPRAnalysis,
+  getOpenPullRequests,
+  runOpenPullRequestScan,
   connectGithubRepo,
   unlinkGithubRepo,
   getGithubStatus,

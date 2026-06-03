@@ -82,12 +82,12 @@ async function postComments({ owner, repo, pull_number, installationId, accessTo
   // Post a single review with aggregated comments
   if (!reviewComments.length) {
     logger.info(`No valid review comments to post for ${owner}/${repo}#${pull_number}`);
-    return;
+    return null;
   }
 
   try {
     const summary = buildReviewSummary(comments);
-    await githubService.createReview({
+    const review = await githubService.createReview({
       owner,
       repo,
       pull_number,
@@ -98,6 +98,7 @@ async function postComments({ owner, repo, pull_number, installationId, accessTo
       comments: reviewComments,
     });
     logger.info(`Posted ${reviewComments.length} comments to ${owner}/${repo}#${pull_number}`);
+    return review?.id || null;
   } catch (err) {
     logger.error('Failed to post review', err.message || err);
     throw err;

@@ -7,10 +7,23 @@ async function hasProcessedHeadSha({ owner, repo, prNumber, headSha }) {
     prNumber,
     headSha,
   }).lean();
-  return Boolean(
-    existing &&
-    ["processing", "completed", "skipped"].includes(existing.status),
-  );
+  if (!existing) return false;
+
+  if (existing.status === "processing") {
+    const staleMs = Number(process.env.REVIEW_RUN_STUCK_MS || 15 * 60 * 1000);
+    if (staleMs > 0 && existing.updatedAt) {
+      const ageMs = Date.now() - new Date(existing.updatedAt).getTime();
+      if (ageMs > staleMs) {
+        await ReviewRun.updateOne(
+          { _id: existing._id },
+          { $set: { status: "failed", skippedReason: "stale_processing_timeout" } },
+        );
+        return false;
+      }
+    }
+  }
+
+  return Boolean(["processing", "completed", "skipped"].includes(existing.status));
 }
 
 async function startRun({
@@ -46,6 +59,14 @@ async function completeRun({ owner, repo, prNumber, headSha, payload }) {
   return ReviewRun.findOneAndUpdate(
     { owner, repo, prNumber, headSha },
     { $set: { status: "completed", ...payload } },
+    { new: true },
+  );
+}
+
+async function setReviewId({ owner, repo, prNumber, headSha, reviewId }) {
+  return ReviewRun.findOneAndUpdate(
+    { owner, repo, prNumber, headSha },
+    { $set: { reviewId } },
     { new: true },
   );
 }
@@ -93,6 +114,7 @@ module.exports = {
   completeRun,
   skipRun,
   failRun,
+  setReviewId,
   getRepoHistory,
   getPRRun,
 };
