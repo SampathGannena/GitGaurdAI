@@ -229,14 +229,11 @@ test('authenticated smoke test covers primary pages', async ({ page }) => {
   await navigation.getByRole('button', { name: 'Compliance' }).click();
   await expect(page.getByRole('heading', { name: /Compliance Report/i })).toBeVisible();
 
-  await navigation.getByRole('button', { name: 'Webhook' }).click();
-  await expect(page.getByRole('heading', { name: /Webhook Integration Monitor/i })).toBeVisible();
-
   await navigation.getByRole('button', { name: 'Lab' }).click();
   await expect(page.getByRole('heading', { name: /Configuration Lab/i })).toBeVisible();
 
-  await navigation.getByRole('button', { name: 'Chat' }).click();
-  await expect(page.getByRole('heading', { name: /Team Chat/i })).toBeVisible();
+  await navigation.getByRole('button', { name: 'AI Assist' }).click();
+  await expect(page.getByRole('heading', { name: /AI Assistance/i })).toBeVisible();
 
   await navigation.getByRole('button', { name: 'Dashboard' }).click();
   await expect(page.getByRole('heading', { name: 'Ship safer pull requests with an AI review loop.' })).toBeVisible();

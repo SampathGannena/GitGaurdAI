@@ -77,6 +77,128 @@ ${hunk.patchLines.join('\n')}`;
   }
 }
 
+async function answerRepoQuestion({ owner, repo, prNumber, question, run, teamSettings = {}, recentRuns = [] }) {
+  const runContext = run
+    ? {
+        prNumber: run.prNumber,
+        title: run.prTitle,
+        author: run.prAuthor,
+        status: run.status,
+        failureReason: run.skippedReason,
+        filesChanged: run.filesChanged,
+        hunksAnalyzed: run.hunksAnalyzed,
+        commentsPosted: run.commentsPosted,
+        avgRiskScore: run.avgRiskScore,
+        timingsMs: run.timingsMs,
+        findings: (run.findings || []).slice(0, 12).map((finding) => ({
+          filePath: finding.filePath,
+          severity: finding.severity,
+          category: finding.category,
+          title: finding.title,
+          explanation: finding.explanation,
+          suggestion: finding.suggestion,
+          riskScore: finding.riskScore,
+          blastRadius: finding.blastRadius,
+        })),
+      }
+    : null;
+
+  const prompt = `You are GitGuard AI Assistance for the connected repository ${owner}/${repo}.
+
+Answer the user's PR review question using only the repository context below. Be concise, practical, and action-oriented.
+If the selected PR has a failed run, explain the failure reason plainly and suggest what to do next.
+If the run completed but hunk analysis is 0, say clearly that the review did not inspect the patch and do not imply code errors.
+If there are findings, prioritize the riskiest findings and mention file paths.
+If context is missing, say exactly what context is missing and what the user should load or scan.
+
+Connected repository: ${owner}/${repo}
+Selected PR: #${prNumber}
+Repository rules/settings: ${JSON.stringify(teamSettings)}
+Selected PR review run: ${JSON.stringify(runContext)}
+Recent repository runs: ${JSON.stringify(
+    recentRuns.slice(0, 8).map((item) => ({
+      prNumber: item.prNumber,
+      title: item.prTitle,
+      status: item.status,
+      failureReason: item.skippedReason,
+      findings: item.findings?.length || 0,
+      commentsPosted: item.commentsPosted || 0,
+      avgRiskScore: item.avgRiskScore || 0,
+      updatedAt: item.updatedAt,
+    })),
+  )}
+
+User question:
+${question}`;
+
+  if (!process.env.GROQ_API_KEY) {
+    return buildOfflineRepoAnswer({ owner, repo, prNumber, question, run });
+  }
+
+  try {
+    const res = await retryAsync(
+      () => axios.post(
+        'https://api.groq.com/openai/v1/chat/completions',
+        {
+          model: getGroqModel(),
+          messages: [
+            { role: 'system', content: 'You are GitGuard AI Assistance, a concise repository-aware PR review helper.' },
+            { role: 'user', content: prompt },
+          ],
+          temperature: 0.25,
+          max_tokens: 700,
+        },
+        {
+          headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
+          timeout: 20000,
+        },
+      ),
+      {
+        retries: 2,
+        minDelayMs: 500,
+        maxDelayMs: 3000,
+        onRetry: ({ attempt, delayMs, error }) => {
+          logger.warn(`Retrying Groq assistance (${attempt + 1}/3) in ${delayMs}ms: ${error.message || error}`);
+        },
+      },
+    );
+
+    const text = res.data.choices?.[0]?.message?.content || '';
+    return text.trim() || buildOfflineRepoAnswer({ owner, repo, prNumber, question, run });
+  } catch (err) {
+    logger.error('Groq AI assistance error', err.message || err);
+    return buildOfflineRepoAnswer({ owner, repo, prNumber, question, run });
+  }
+}
+
+function buildOfflineRepoAnswer({ owner, repo, prNumber, run }) {
+  if (!run) {
+    return `I do not have review-run context for ${owner}/${repo} PR #${prNumber} yet. Run an AI scan for this PR first, then ask again for findings, risk, or next steps.`;
+  }
+
+  if (run.status === 'failed') {
+    return `PR #${prNumber} has a failed analysis run. Reason: ${run.skippedReason || 'unknown failure'}. Try reducing the PR diff size, excluding generated files, or rerunning the scan after the repository context is available.`;
+  }
+
+  const findings = run.findings || [];
+  if (!findings.length) {
+    if ((run.hunksAnalyzed || 0) === 0) {
+      return `PR #${prNumber} looks clean, but the review did not inspect the patch. The run completed with 0 hunks analyzed, so there is no diff coverage to confirm whether the changed files were actually reviewed. Run a fresh scan on the PR diff to collect review findings.`;
+    }
+
+    return `PR #${prNumber} in ${owner}/${repo} has status "${run.status}" and no stored findings. The scan completed, but there are no review findings to report. Focus on changed high-risk files, test coverage, and whether the scan covered the relevant code before merging.`;
+  }
+
+  const topFindings = findings
+    .slice()
+    .sort((a, b) => (b.riskScore || 0) - (a.riskScore || 0))
+    .slice(0, 3)
+    .map((finding) => `- ${finding.severity || 'medium'} in ${finding.filePath}: ${finding.title || 'Review finding'}`)
+    .join('\n');
+
+  return `For ${owner}/${repo} PR #${prNumber}, prioritize these findings:\n${topFindings}\n\nReview the suggestions, verify tests around the touched files, and rerun the scan after fixes.`;
+}
+
 function getGroqModel() {
   const configuredModel = process.env.GROQ_MODEL;
   if (!configuredModel || DEPRECATED_GROQ_MODELS.has(configuredModel)) {
@@ -131,4 +253,4 @@ function normalizeCategory(category) {
   return ['security', 'performance', 'correctness', 'maintainability'].includes(val) ? val : 'correctness';
 }
 
-module.exports = { analyzeHunk, getGroqModel };
+module.exports = { analyzeHunk, answerRepoQuestion, getGroqModel };

@@ -41,6 +41,7 @@ export default function Dashboard({
   const [pullsError, setPullsError] = useState("");
   const [activityMode, setActivityMode] = useState("runs");
   const [scanLoading, setScanLoading] = useState(false);
+  const [scanToast, setScanToast] = useState(null);
 
   const repositoryReady = owner.trim() && repo.trim();
 
@@ -179,10 +180,12 @@ export default function Dashboard({
 
   const handleRunScanClick = async (prNumber) => {
     if (!owner || !repo) {
+      setScanToast(null);
       setMessage("Set a repository before running a scan.");
       return;
     }
     if (!prNumber) {
+      setScanToast(null);
       setMessage("Select an open PR to run a scan.");
       return;
     }
@@ -199,13 +202,84 @@ export default function Dashboard({
         throw new Error(data.message || "Unable to enqueue AI scan");
       }
       const jobText = data.jobId ? ` (job ${data.jobId})` : "";
-      setMessage(`AI scan queued for PR #${data.prNumber}${jobText}.`);
+      setScanToast({
+        jobId: data.jobId || "",
+        prNumber: data.prNumber,
+        status: "queued",
+        text: `AI scan queued for PR #${data.prNumber}${jobText}.`,
+      });
     } catch (error) {
+      setScanToast(null);
       setMessage(error.message);
     } finally {
       setScanLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!scanToast?.jobId || !["queued", "processing"].includes(scanToast.status)) {
+      return undefined;
+    }
+
+    let isActive = true;
+    const pollJob = async () => {
+      try {
+        const response = await apiFetch(
+          `${apiBase}/queue/jobs/status?jobId=${encodeURIComponent(scanToast.jobId)}`,
+        );
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+          throw new Error(data.message || "Unable to check scan status");
+        }
+
+        const job = data.job || {};
+        if (!isActive) return;
+
+        if (job.status === "completed") {
+          setScanToast({
+            jobId: scanToast.jobId,
+            prNumber: scanToast.prNumber,
+            status: "completed",
+            text: `AI scan completed for PR #${scanToast.prNumber}.`,
+          });
+          loadDashboard();
+          return;
+        }
+
+        if (job.status === "failed") {
+          setScanToast({
+            jobId: scanToast.jobId,
+            prNumber: scanToast.prNumber,
+            status: "failed",
+            text: `AI scan failed for PR #${scanToast.prNumber}: ${job.lastError || "Unknown error"}.`,
+          });
+          loadDashboard();
+          return;
+        }
+
+        setScanToast((current) =>
+          current?.jobId === scanToast.jobId
+            ? { ...current, status: job.status || "queued" }
+            : current,
+        );
+      } catch (error) {
+        if (isActive) {
+          setScanToast((current) =>
+            current?.jobId === scanToast.jobId
+              ? { ...current, status: "failed", text: error.message }
+              : current,
+          );
+        }
+      }
+    };
+
+    pollJob();
+    const timer = window.setInterval(pollJob, 1500);
+    return () => {
+      isActive = false;
+      window.clearInterval(timer);
+    };
+  }, [apiBase, apiFetch, scanToast?.jobId, scanToast?.status]);
 
   return (
     <motion.div
@@ -260,6 +334,23 @@ export default function Dashboard({
         </div>
       )}
 
+      {scanToast && (
+        <div
+          className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm ${
+            scanToast.status === "failed"
+              ? "border-rose-400/25 bg-rose-400/10 text-rose-100"
+              : scanToast.status === "completed"
+                ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-100"
+                : "border-amber-400/20 bg-amber-400/10 text-amber-100"
+          }`}
+        >
+          {["queued", "processing"].includes(scanToast.status) && (
+            <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-current border-r-transparent" />
+          )}
+          <span>{scanToast.text}</span>
+        </div>
+      )}
+
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         {[
           { label: "Total Runs", value: insights?.totalRuns ?? totals.totalRuns, hint: "Webhook reviews" },
@@ -295,7 +386,7 @@ export default function Dashboard({
             />
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center gap-2">
+          <div className="hidden-scroll mt-4 flex items-center gap-2 overflow-x-auto pb-1">
             <button
               onClick={() => setActivityMode("runs")}
               className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
@@ -341,8 +432,8 @@ export default function Dashboard({
             ))}
           </div>
 
-          <div className="mt-5 overflow-hidden rounded-2xl border border-white/10">
-            <table className="w-full text-sm">
+          <div className="hidden-scroll mt-5 max-h-[440px] overflow-auto rounded-2xl border border-white/10">
+            <table className="min-w-[720px] w-full text-sm">
               <thead className="bg-white/[0.04] text-left text-xs uppercase tracking-wide text-slate-500">
                 {showRuns ? (
                   <tr>
@@ -426,7 +517,7 @@ export default function Dashboard({
                         <button
                           type="button"
                           onClick={() => handleRunScanClick(pr.number)}
-                          className="rounded-full border border-violet-400/40 bg-violet-400/20 px-3 py-1 text-[11px] font-semibold text-violet-100 hover:bg-violet-400/30 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="btn-scan"
                           disabled={scanLoading}
                         >
                           {scanLoading ? "Queuing..." : "Run AI scan"}
@@ -435,7 +526,7 @@ export default function Dashboard({
                           href={pr.url}
                           target="_blank"
                           rel="noreferrer"
-                          className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-[11px] font-semibold text-slate-200 hover:bg-white/20"
+                          className="btn-view"
                         >
                           View PR
                         </a>

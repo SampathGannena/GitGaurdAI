@@ -84,6 +84,7 @@ const pages = [
     hint: "Delivery and event monitor",
     icon: "webhook",
     category: "core",
+    showInSidebar: false,
   },
   {
     id: "config-lab",
@@ -94,8 +95,8 @@ const pages = [
   },
   {
     id: "chat",
-    label: "Chat",
-    hint: "Ask the assistant",
+    label: "AI Assist",
+    hint: "PR review guidance",
     icon: "chat",
     category: "lab",
   },

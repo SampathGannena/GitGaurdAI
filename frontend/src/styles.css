@@ -69,11 +69,15 @@ html, body, #root {
   }
 
   .btn-view {
-    @apply rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold text-slate-200 transition hover:bg-white/20;
+    @apply inline-flex shrink-0 items-center justify-center rounded-full border border-sky-300/35 bg-sky-300/10 px-4 py-2 text-xs font-semibold leading-none text-sky-100 shadow-lg shadow-sky-950/20 transition hover:border-sky-200/60 hover:bg-sky-300/20 hover:text-white;
+    min-width: max-content;
+    white-space: nowrap;
   }
 
   .btn-scan {
-    @apply relative overflow-hidden rounded-full border border-violet-400/50 bg-violet-400/20 px-3 py-1 text-[11px] font-semibold text-violet-100 transition hover:bg-violet-400/30 disabled:cursor-not-allowed disabled:opacity-60;
+    @apply relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-violet-400/50 bg-violet-400/20 px-4 py-2 text-xs font-semibold leading-none text-violet-100 transition hover:bg-violet-400/30 disabled:cursor-not-allowed disabled:opacity-60;
+    min-width: max-content;
+    white-space: nowrap;
   }
 
   .btn-scan::after {
@@ -165,6 +169,16 @@ html, body, #root {
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
     -webkit-overflow-scrolling: touch;
+  }
+
+  .hidden-scroll {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .hidden-scroll::-webkit-scrollbar {
+    display: none;
   }
 
   /* ===== Footer ===== */

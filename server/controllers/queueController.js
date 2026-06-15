@@ -82,6 +82,27 @@ async function getQueueMetrics(req, res, next) {
   }
 }
 
+async function getJobStatus(req, res, next) {
+  try {
+    const jobId = String(req.query.jobId || '').trim();
+    if (!jobId) {
+      return res.status(400).json({ ok: false, message: 'jobId is required' });
+    }
+
+    const job = await WebhookJob.findOne({ jobId })
+      .select('jobId status attempts maxAttempts lastError startedAt finishedAt updatedAt')
+      .lean();
+
+    if (!job) {
+      return res.status(404).json({ ok: false, message: 'Job not found' });
+    }
+
+    res.json({ ok: true, job });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function cleanupOldJobs(req, res, next) {
   try {
     const retentionOverride = Number(req.query.retentionSeconds);
@@ -115,4 +136,4 @@ async function cleanupOldJobs(req, res, next) {
   }
 }
 
-module.exports = { getQueueMetrics, cleanupOldJobs };
+module.exports = { getQueueMetrics, getJobStatus, cleanupOldJobs };

@@ -1,5 +1,18 @@
 const ChatMessage = require("../models/ChatMessage");
 const logger = require("../config/logger");
+const aiService = require("../services/aiService");
+const repoSettingsService = require("../services/repoSettingsService");
+const reviewRunService = require("../services/reviewRunService");
+
+async function buildAssistanceContext({ owner, repo, prNumber }) {
+  const [teamSettings, run, recentRuns] = await Promise.all([
+    repoSettingsService.getOrCreateRepoSettings({ owner, repo }),
+    reviewRunService.getPRRun({ owner, repo, prNumber: Number(prNumber) }),
+    reviewRunService.getRepoHistory({ owner, repo, limit: 8 }),
+  ]);
+
+  return { teamSettings, run, recentRuns };
+}
 
 async function getMessages(req, res, next) {
   try {
@@ -44,7 +57,32 @@ async function postMessage(req, res, next) {
       mentions: mentions || [],
     });
 
-    res.status(201).json({ ok: true, message });
+    const { teamSettings, run, recentRuns } = await buildAssistanceContext({
+      owner,
+      repo,
+      prNumber,
+    });
+    const answer = await aiService.answerRepoQuestion({
+      owner,
+      repo,
+      prNumber: Number(prNumber),
+      question: content.trim(),
+      run,
+      teamSettings,
+      recentRuns,
+    });
+
+    const assistantMessage = await ChatMessage.create({
+      owner,
+      repo,
+      prNumber: Number(prNumber),
+      findingId,
+      author: "GitGuard AI",
+      content: answer,
+      mentions: [],
+    });
+
+    res.status(201).json({ ok: true, message, assistantMessage });
   } catch (err) {
     next(err);
   }
@@ -63,7 +101,7 @@ async function addReply(req, res, next) {
 
     const author = req.user?.email || req.user?.name || "anonymous";
 
-    const message = await ChatMessage.findByIdAndUpdate(
+    let message = await ChatMessage.findByIdAndUpdate(
       messageId,
       {
         $push: {
@@ -81,6 +119,36 @@ async function addReply(req, res, next) {
     if (!message) {
       return res.status(404).json({ ok: false, message: "Message not found" });
     }
+
+    const { teamSettings, run, recentRuns } = await buildAssistanceContext({
+      owner,
+      repo,
+      prNumber,
+    });
+    const answer = await aiService.answerRepoQuestion({
+      owner,
+      repo,
+      prNumber: Number(prNumber),
+      question: `${message.content}\n\nFollow-up: ${content.trim()}`,
+      run,
+      teamSettings,
+      recentRuns,
+    });
+
+    message = await ChatMessage.findByIdAndUpdate(
+      messageId,
+      {
+        $push: {
+          replies: {
+            author: "GitGuard AI",
+            content: answer,
+            createdAt: new Date(),
+            mentions: [],
+          },
+        },
+      },
+      { new: true },
+    );
 
     res.status(201).json({ ok: true, message });
   } catch (err) {

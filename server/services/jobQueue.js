@@ -56,7 +56,7 @@ async function enqueuePullRequestJob(payload, event) {
     doc = { ...doc, status: 'queued' };
   }
 
-  drainQueue();
+  scheduleDrainQueue();
   return { id: doc.jobId };
 }
 
@@ -64,8 +64,8 @@ function startWebhookQueueWorker() {
   if (workerStarted) return;
   workerStarted = true;
   stopping = false;
-  pollTimer = setInterval(drainQueue, pollMs);
-  drainQueue();
+  pollTimer = setInterval(scheduleDrainQueue, pollMs);
+  scheduleDrainQueue();
 }
 
 async function stopWebhookQueueWorker({ timeoutMs = 5000 } = {}) {
@@ -113,9 +113,15 @@ async function drainQueue() {
     inFlight += 1;
     handleJob(job).finally(() => {
       inFlight -= 1;
-      setImmediate(drainQueue);
+      setImmediate(scheduleDrainQueue);
     });
   }
+}
+
+function scheduleDrainQueue() {
+  drainQueue().catch((err) => {
+    logger.error(`Webhook queue polling failed: ${err.message || err}`);
+  });
 }
 
 async function sweepStuckJobs() {
